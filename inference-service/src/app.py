@@ -1,19 +1,33 @@
-from fastapi import FastAPI, HTTPException
-import uuid
 import os
+
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Body
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
 import torch
 
-from src.storage import download_image, upload_headshot, upload_paper
-from src.face import extract_headshot
-from src.paper import extract_paper
-from src.timer import Timer
+from src.pipeline import pipeline
+from src.upload_image import upload_image_handler
+from src.storage import download_headshot, download_paper
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 app = FastAPI(
     title="Extraction Inference API",
-    docs_url="/",
+    docs_url="/doc",
     redoc_url=None,
     openapi_url="/openapi.json"
 )
+
+# Serve static files
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Serve UI at root
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 @app.get("/health")
 def health():
@@ -26,49 +40,39 @@ def health():
         "gpu_name": gpu_name
     }
 
+class ExtractRequest(BaseModel):
+    filename: str
+
 @app.post("/extract")
-def extract(filename: str):
-    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+def extract(request: ExtractRequest):
+    filename = request.filename
+    if not filename.endswith((".jpg", ".png", ".jpeg")):
+        raise HTTPException(400, "Invalid image format")
 
-    local_input = f"/tmp/{uuid.uuid4()}.jpg"
-    local_output = f"/tmp/{uuid.uuid4()}_headshot.jpg"
-    local_paper = f"/tmp/{uuid.uuid4()}_paper.jpg"
+    return pipeline(filename)
 
-    timer = Timer()
 
+@app.post("/upload")
+def upload_image_endpoint(file: UploadFile = File(...)):
+    return upload_image_handler(file)
+
+def delete_file(path: str):
     try:
-        # Download from Tigris
-        download_image(filename, local_input)
-        timer.mark("download")
-
-        # headshot
-        headshot_result = extract_headshot(local_input, local_output)
-        timer.mark("headshot_inference")
-        if headshot_result:
-            upload_headshot(filename, local_output)
-            timer.mark("upload_headshot")
-
-        # paper
-        paper_result = extract_paper(local_input, local_paper)
-        timer.mark("paper_inference")
-        if paper_result:
-            upload_paper(filename, local_paper)
-            timer.mark("upload_paper")
-
-        return {
-            "status": "ok",
-            "gpu": gpu_name,
-            "filename": filename,
-            "headshot_result": headshot_result,
-            "paper_result": paper_result,
-            "timing": timer.steps
-        }
-
+        if os.path.exists(path):
+            os.remove(path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Failed to delete {path}: {e}")
 
-    finally:
-        # Clean up temporary files
-        for f in [local_input, local_output, local_paper]:
-            if os.path.exists(f):
-                os.remove(f)
+@app.get("/headshot/{filename}")
+def get_headshot(filename: str, background_tasks: BackgroundTasks):
+    local_path = f"/tmp/headshot_{filename}"
+    download_headshot(filename, local_path)
+    background_tasks.add_task(delete_file, local_path)
+    return FileResponse(local_path)
+
+@app.get("/paper/{filename}")
+def get_paper(filename: str, background_tasks: BackgroundTasks):
+    local_path = f"/tmp/paper_{filename}"
+    download_paper(filename, local_path)
+    background_tasks.add_task(delete_file, local_path)
+    return FileResponse(local_path)

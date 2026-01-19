@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Extraction Pipeline</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; }
+        input, button { margin: 0.5rem 0; padding: 0.5rem; }
+        img { max-width: 100%; border: 1px solid #ccc; }
+        .container { display: flex; gap: 2rem; margin-top: 1rem; }
+        .column { flex: 1; }
+        pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .images, .ocr-results { margin-top: 1rem; }
+        h3 { margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Extraction Pipeline</h1>
+
+    <label>Select an image to upload:</label>
+    <input type="file" id="fileInput" accept="image/*">
+    <br>
+    <button id="uploadBtn">Upload</button>
+    <button id="extractBtn" disabled>Extract</button>
+
+    <div class="container">
+        <div class="column">
+            <h3>Uploaded Image</h3>
+            <img id="uploadedImage" src="" alt="Uploaded Image">
+        </div>
+
+        <div class="column images">
+            <h3>Headshot</h3>
+            <img id="headshotPreview" src="" alt="Headshot Preview">
+
+            <h3>Paper</h3>
+            <img id="paperPreview" src="" alt="Paper Preview">
+        </div>
+
+        <div class="column ocr-results">
+            <h3>Extracted OCR</h3>
+            <pre id="extractOcrResult"></pre>
+
+            <h3>Parsed OCR</h3>
+            <pre id="parseOcrResult"></pre>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const extractBtn = document.getElementById('extractBtn');
+
+        const uploadedImage = document.getElementById('uploadedImage');
+        const headshotPreview = document.getElementById('headshotPreview');
+        const paperPreview = document.getElementById('paperPreview');
+        const extractOcrResult = document.getElementById('extractOcrResult');
+        const parseOcrResult = document.getElementById('parseOcrResult');
+
+        let currentFile;
+        let uploadedFilename; // store filename returned from /upload
+
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            currentFile = file;
+            uploadedImage.src = URL.createObjectURL(file);
+        });
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!currentFile) {
+                alert("Please select a file first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", currentFile);
+
+            try {
+                const resp = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+
+                const data = await resp.json();
+                uploadedFilename = data.filename;
+                alert(`Upload successful: ${uploadedFilename}`);
+                extractBtn.disabled = false;
+
+            } catch (err) {
+                console.error(err);
+                alert("Upload Error: " + err.message);
+            }
+        });
+
+        extractBtn.addEventListener('click', async () => {
+            if (!uploadedFilename) {
+                alert("No uploaded file to extract from.");
+                return;
+            }
+
+            try {
+                const resp = await fetch("/extract", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ filename: uploadedFilename })
+                });
+
+                if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+
+                const data = await resp.json();
+
+                // Show headshot & paper
+                headshotPreview.src = `/headshot/${encodeURIComponent(data.filename)}?t=${Date.now()}`;
+                paperPreview.src = `/paper/${encodeURIComponent(data.filename)}?t=${Date.now()}`;
+
+                // Show OCR results
+                extractOcrResult.textContent = JSON.stringify(data.extract_ocr_result, null, 2);
+                parseOcrResult.textContent = JSON.stringify(data.parse_ocr_result, null, 2);
+
+            } catch (err) {
+                console.error(err);
+                alert("Extract Error: " + err.message);
+            }
+        });
+    </script>
+</body>
+</html>
