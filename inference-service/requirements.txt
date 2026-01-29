@@ -1,12 +1,5 @@
 fastapi
 uvicorn
-torch
-torchvision
 jupyter
-insightface
-onnxruntime-gpu>=1.17.0
-opencv-python-headless
 boto3
-huggingface-hub
-transformers
-accelerate
+python-multipart

@@ -1,0 +1,9 @@
+template.pptx output.pptx
+img headshot.jpg
+left=2 top=3 w=3
+txt Hello from Python
+left=1 top=1 w=6 h=1.5
+fontsz=32 align=center font="Times New Roman"
+txt Person's name
+left=1 top=1 w=6 h=1.5
+fontsz=12 align=center

@@ -1,0 +1,366 @@
+<!-- Floating Flash Notification Button and Section -->
+<div id="flash-fab-root">
+  <%= if Enum.any?(@flash) do %>
+    <div
+      id="flash-fab"
+      phx-click="toggle_flash"
+      class="fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 rounded-full shadow-lg bg-primary text-white cursor-pointer hover:bg-primary-focus transition-all"
+      style="box-shadow: 0 4px 24px 0 rgba(0,0,0,0.18);"
+    >
+      <.icon name="hero-bell-alert" class="w-7 h-7" />
+      <span class="absolute -top-1 -right-1 bg-error text-xs rounded-full px-2 py-0.5 font-bold" style="min-width:1.5rem;">
+        <%= Enum.count(@flash) %>
+      </span>
+    </div>
+    <%= if @show_flash_messages do %>
+      <div
+        id="flash-messages"
+        class="fixed bottom-24 right-6 z-50 w-96 max-w-full bg-base-100 rounded-lg shadow-2xl border border-base-300 animate-fade-in"
+      >
+        <div class="flex justify-between items-center px-4 py-2 border-b border-base-200">
+          <span class="font-semibold text-base-content">Notifications</span>
+          <button phx-click="toggle_flash" class="btn btn-ghost btn-xs"><.icon name="hero-x-mark" class="w-4 h-4" /></button>
+        </div>
+        <div class="max-h-80 overflow-y-auto divide-y divide-base-200">
+          <%= for {type, msg} <- @flash do %>
+            <div class="flex items-start gap-2 px-4 py-3">
+              <.icon name={if type == :error, do: "hero-x-circle", else: "hero-check-circle"} class={"w-5 h-5 mt-0.5 " <> (if type == :error, do: "text-error", else: "text-success")} />
+              <div class="flex-1">
+                <span class={"block text-sm " <> (if type == :error, do: "text-error", else: "text-success") }><%= msg %></span>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+    <script>
+      window.addEventListener('phx:page-loading-stop', function() {
+        // Hide flash messages on navigation
+        if (window.liveSocket) {
+          window.liveSocket.execJS(document.getElementById('flash-messages'), 'remove()');
+        }
+      });
+    </script>
+  <% end %>
+</div>
+<style>
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease;
+}
+</style>
+<div class="flex h-screen bg-base-200">
+  <!-- Left Sidebar -->
+  <div class="w-80 bg-base-100 shadow-lg flex flex-col">
+    <!-- Header -->
+    <div class="p-4 border-b border-base-300 flex items-center justify-between">
+      <h1 class="text-2xl font-bold">Baptism Certificates</h1>
+      <button
+        phx-click="open_settings"
+        class="btn btn-ghost btn-sm btn-circle"
+        title="Settings"
+      >
+        <.icon name="hero-cog-6-tooth" class="w-5 h-5" />
+      </button>
+    </div>
+    
+<!-- Upload Section -->
+    <div class="p-4 border-b border-base-300">
+      <form phx-submit="save" phx-change="validate" class="space-y-3">
+        <div class="form-control">
+          <.live_file_input upload={@uploads.images} class="hidden" />
+          <label for={@uploads.images.ref} class="btn btn-primary btn-sm cursor-pointer">
+            <.icon name="hero-arrow-up-tray" class="w-4 h-4 mr-2" /> Upload Images
+          </label>
+        </div>
+
+        <%= for entry <- @uploads.images.entries do %>
+          <div class="flex items-center gap-2 text-sm">
+            <span class="flex-1 truncate text-xs">{entry.client_name}</span>
+            <progress class="progress progress-primary w-20" value={entry.progress} max="100">
+            </progress>
+            <span class="text-xs w-8">{entry.progress}%</span>
+            <button
+              type="button"
+              phx-click="cancel_upload"
+              phx-value-ref={entry.ref}
+              class="btn btn-ghost btn-xs"
+            >
+              ✕
+            </button>
+          </div>
+        <% end %>
+
+        <%= if length(@uploads.images.entries) > 0 do %>
+          <button type="submit" class="btn btn-success btn-sm w-full">
+            Save Uploads
+          </button>
+        <% end %>
+      </form>
+      
+<!-- Extract All Button -->
+      <button
+        phx-click="extract_all"
+        class="btn btn-accent btn-sm w-full mt-3"
+      >
+        <.icon name="hero-cpu-chip" class="w-4 h-4 mr-2" /> Extract All Unprocessed
+      </button>
+    </div>
+    
+<!-- Profiles List -->
+    <div class="flex-1 overflow-y-auto">
+      <%= for profile <- @profiles do %>
+        <div class={[
+          "w-full border-b border-base-300 hover:bg-base-200 transition-colors flex",
+          @selected_profile && @selected_profile.id == profile.id && "bg-primary/10"
+        ]}>
+          <button
+            phx-click="select_profile"
+            phx-value-id={profile.id}
+            class="flex-1 p-4 text-left"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex-1 min-w-0">
+                <div class="font-medium truncate">
+                  {Profiles.display_name(profile)}
+                </div>
+                <div class="text-xs text-base-content/60 mt-1">
+                  {profile.id}
+                </div>
+              </div>
+              <div class="ml-3">
+                <span class={["badge badge-sm", Profiles.status_color(profile.status)]}>
+                  {profile.status}
+                </span>
+              </div>
+            </div>
+          </button>
+          <button
+            phx-click="extract_profile"
+            phx-value-id={profile.id}
+            class="px-3 text-info hover:bg-info/10 transition-colors"
+            title="Extract this profile"
+          >
+            <.icon name="hero-cpu-chip" class="w-4 h-4" />
+          </button>
+          <button
+            phx-click="delete_profile"
+            phx-value-id={profile.id}
+            class="px-3 text-error hover:bg-error/10 transition-colors"
+            title="Delete profile"
+          >
+            <.icon name="hero-trash" class="w-4 h-4" />
+          </button>
+        </div>
+      <% end %>
+    </div>
+  </div>
+  
+<!-- Main Content Area -->
+  <div class="flex-1 overflow-y-auto">
+    <%= if @selected_profile do %>
+      <div class="p-8">
+        <div class="grid grid-cols-2 gap-8">
+          <!-- Left: Scrollable Images Column -->
+          <div class="flex flex-col h-[880px] overflow-y-auto gap-6">
+            <%= if @compressed_original_image_url do %>
+              <div class="card bg-base-100 shadow-xl w-full">
+                <figure class="bg-base-300 rounded flex items-center justify-center aspect-[210/297] w-full">
+                  <a href={@original_image_url} target="_blank" title="View original image">
+                    <img
+                      src={@compressed_original_image_url}
+                      alt="Original (Compressed)"
+                      class="object-contain max-w-full max-h-full fadein-img cursor-zoom-in"
+                    />
+                  </a>
+                </figure>
+                <div class="card-body p-2">
+                  <h4 class="card-title text-sm">Original (Compressed)</h4>
+                  <span class="text-xs text-base-content/60">Click image to view full original</span>
+                </div>
+              </div>
+            <% end %>
+            <%= if @headshot_url do %>
+              <div class="card bg-base-100 shadow-xl w-full">
+                <figure class="bg-base-300 rounded flex items-center justify-center aspect-[210/297] w-full">
+                  <img
+                    src={@headshot_url}
+                    alt="Headshot"
+                    class="object-contain max-w-full max-h-full fadein-img"
+                  />
+                </figure>
+                <div class="card-body p-2">
+                  <h4 class="card-title text-sm">Headshot</h4>
+                </div>
+              </div>
+            <% end %>
+            <%= if @paper_url do %>
+              <div class="card bg-base-100 shadow-xl w-full">
+                <figure class="bg-base-300 rounded flex items-center justify-center aspect-[210/297] w-full">
+                  <img
+                    src={@paper_url}
+                    alt="Paper"
+                    class="object-contain max-w-full max-h-full fadein-img"
+                  />
+                <style>
+                .fadein-img {
+                  filter: grayscale(1) opacity(0.6);
+                  animation: fadein-img-effect 0.7s ease-in 0s 1 normal forwards;
+                }
+                @keyframes fadein-img-effect {
+                  from { filter: grayscale(1) opacity(0.6); }
+                  to { filter: grayscale(0) opacity(1); }
+                }
+                </style>
+                </figure>
+                <div class="card-body p-2">
+                  <h4 class="card-title text-sm">Extracted Paper</h4>
+                </div>
+              </div>
+            <% end %>
+          </div>
+          <!-- Right: Profile Info -->
+          <div class="flex-1">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body">
+                <h3 class="card-title">Edit Profile Information</h3>
+                <form phx-submit="save_profile_info">
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <label class="text-sm text-base-content/60">Pinyin Name</label>
+                      <input type="text" name="profile[name_pinyin]" value={@selected_profile.name_pinyin} class="input input-bordered w-full" />
+                    </div>
+                    <div>
+                      <label class="text-sm text-base-content/60">Chinese Name</label>
+                      <input type="text" name="profile[name_cn]" value={@selected_profile.name_cn} class="input input-bordered w-full" />
+                    </div>
+                    <div>
+                      <label class="text-sm text-base-content/60">Birthday</label>
+                      <input type="text" name="profile[birthday]" value={@selected_profile.birthday} class="input input-bordered w-full" />
+                    </div>
+                    <div>
+                      <label class="text-sm text-base-content/60">Baptism Date</label>
+                      <input type="text" name="profile[baptism_date]" value={@selected_profile.baptism_date} class="input input-bordered w-full" />
+                    </div>
+                  </div>
+                  <div class="mt-4 flex justify-end">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+<!-- Actions -->
+        <div class="mt-6 flex gap-3">
+          <%= if @selected_profile.status == :extracted do %>
+            <button
+              phx-click="generate_certificate"
+              phx-value-id={@selected_profile.id}
+              class="btn btn-primary"
+            >
+              <.icon name="hero-document-text" class="w-5 h-5 mr-2" /> Generate Certificate
+            </button>
+          <% end %>
+
+          <%= if @selected_profile.status == :generated do %>
+            <button
+              phx-click="mark_reviewed"
+              phx-value-id={@selected_profile.id}
+              class="btn btn-success"
+            >
+              <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Mark as Reviewed
+            </button>
+          <% end %>
+        </div>
+      </div>
+    <% else %>
+      <!-- Empty State -->
+      <div class="flex items-center justify-center h-full">
+        <div class="text-center">
+          <.icon name="hero-folder-open" class="w-24 h-24 mx-auto text-base-content/20 mb-4" />
+          <h3 class="text-xl font-semibold text-base-content/60">
+            Select a profile to view details
+          </h3>
+          <p class="text-base-content/40 mt-2">
+            Choose a profile from the sidebar or upload new images
+          </p>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>
+
+<!-- Settings Dialog -->
+<%= if @show_settings_dialog do %>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div phx-click="close_settings" class="absolute inset-0"></div>
+    <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-md m-4 relative z-10">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-2xl font-bold">Settings</h2>
+          <button phx-click="close_settings" class="btn btn-ghost btn-sm btn-circle">
+            <.icon name="hero-x-mark" class="w-5 h-5" />
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Inference Pipeline URL</span>
+            </label>
+            <input
+              type="url"
+              phx-blur="save_inference_url"
+              phx-value-inference_url={@inference_url}
+              value={@inference_url}
+              placeholder="https://example.com/api/inference"
+              class="input input-bordered w-full"
+            />
+            <label class="label">
+              <span class="label-text-alt">
+                URL of the inference service for extracting certificate data
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <form phx-submit="upload_template" phx-change="validate_template" class="space-y-4 mt-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Upload Certificate Template</span>
+            </label>
+            <.live_file_input upload={@uploads.template_file} class="hidden" id={@uploads.template_file.ref} />
+            <div class="flex gap-2">
+              <button
+                type="button"
+                phx-click="download_template"
+                class="btn btn-success btn-sm flex-1"
+                disabled={!@template_exists}
+              >
+                <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> Download
+              </button>
+              <label for={@uploads.template_file.ref} class="btn btn-primary btn-sm cursor-pointer flex-1">
+                <.icon name="hero-arrow-up-tray" class="w-4 h-4 mr-2" /> Choose File
+              </label>
+              <button type="submit" class="btn btn-primary btn-sm flex-1" disabled={Enum.empty?(@uploads.template_file.entries)}>
+                Upload Template
+              </button>
+            </div>
+            <%= if Enum.empty?(@uploads.template_file.entries) do %>
+              <div class="text-xs text-base-content mt-2 italic">No file selected</div>
+            <% else %>
+              <div class="text-xs text-success mt-2">
+                Selected: <%= hd(@uploads.template_file.entries).client_name %>
+              </div>
+            <% end %>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+<% end %>

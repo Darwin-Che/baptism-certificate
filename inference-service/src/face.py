@@ -19,7 +19,7 @@ def extract_headshot(input_path: str, output_path: str):
     x1, y1, x2, y2 = map(int, best_face.bbox)
 
     h, w, _ = img.shape
-    pad = int(0.35 * (y2 - y1))
+    pad = int(0.30 * (y2 - y1))
 
     x1 = max(0, x1 - pad)
     y1 = max(0, y1 - pad)

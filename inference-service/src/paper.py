@@ -119,7 +119,8 @@ def extract_paper(input_path, output_path):
     if paper_crop is None:
         print("Paper not found")
         return False
-    rotated = rotate_paper(paper_crop)
+    # rotated = rotate_paper(paper_crop)
+    rotated = paper_crop
     cv2.imwrite(output_path, rotated)
 
     return True

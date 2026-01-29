@@ -14,9 +14,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy Python requirements and install
-COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements_ml.txt .
+
+RUN pip install --upgrade pip
+
+RUN pip install --no-cache-dir -r requirements_ml.txt
 
 # Pre-download models to /models volume
 
@@ -32,22 +34,8 @@ app.prepare(ctx_id=-1, det_size=(640,640))
 print("InsightFace model cached in volume path")
 EOF
 
-# RUN python3 - <<EOF
-# from paddleocr import PaddleOCRVL
-# paddle_ocr_vl = PaddleOCRVL()
-# EOF
-
-# RUN python3 - <<EOF 
-# from transformers import AutoTokenizer, AutoModelForCausalLM
-# tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
-# model = AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', torch_dtype='auto')
-# model.save_pretrained('/models/qwen2.5b')
-# tokenizer.save_pretrained('/models/qwen2.5b')
-# EOF
-
-# Separate layer for small python packages
-RUN pip install --no-cache-dir \
-    python-multipart
+# Install light Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY src ./src

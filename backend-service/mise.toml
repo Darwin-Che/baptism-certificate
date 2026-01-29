@@ -1,0 +1,14 @@
+[tools]
+elixir = '1.19.4-otp-28'
+erlang = '28.3'
+
+[env]
+_.file = ['.env', '.env_secret']
+
+[tasks]
+prepush = [
+  "mix format --check-formatted",
+  "mix compile --warnings-as-errors",
+  "mix credo --strict",
+  "mix dialyzer"
+]

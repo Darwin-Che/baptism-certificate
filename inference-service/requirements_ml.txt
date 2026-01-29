@@ -1,0 +1,8 @@
+torch
+torchvision
+insightface
+onnxruntime-gpu>=1.17.0
+opencv-python-headless
+huggingface-hub
+transformers
+accelerate
