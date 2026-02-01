@@ -37,7 +37,7 @@ You are a data extraction system.
 
 Extract these fields from the OCR text:
 - name_cn
-- name_pinyin : 名字拼音，请合理参考中文名字。如果中文名字是孙建芬 格式应为 "Sun JianFen"。姓在前，名在后，如果名字是多字，每个字拼音的第一个字母大写。
+- name_pinyin : 名字拼音，请合理参考中文名字。如果中文名字是孙建芬 格式应为 "Sun, JianFen"。姓在前，名在后，如果名字是多字，每个字拼音的第一个字母大写。
 - birthday (YYYY-MM-DD)
 - baptism_date (YYYY-MM-DD)
 - phone : 连续10位数字

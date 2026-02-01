@@ -303,12 +303,79 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
     end
   end
 
-  def handle_event("download_all_reviewed", _params, socket) do
+  def handle_event("download_combined_reviewed", _params, socket) do
     reviewed_profiles =
       socket.assigns.profiles
       |> Enum.filter(fn p -> p.status == :reviewed end)
 
-    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates")
+    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates as combined PPTX")
+
+    if Enum.empty?(reviewed_profiles) do
+      {:noreply, put_flash(socket, :error, "No reviewed certificates available to download")}
+    else
+      # Get profile IDs
+      profile_ids = Enum.map(reviewed_profiles, & &1.id)
+
+      # Create combined PPTX file using Certificate module
+      case BaptismBackend.Certificate.combine_certificates(profile_ids) do
+        {:ok, pptx_binary} ->
+          # Send the combined PPTX file as a download
+          timestamp = DateTime.utc_now() |> DateTime.to_unix()
+          filename = "baptism_certificates_#{timestamp}.pptx"
+
+          {:noreply,
+           socket
+           |> push_event("download_file", %{
+             data: Base.encode64(pptx_binary),
+             filename: filename,
+             mime_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+           })}
+
+        {:error, reason} ->
+          Logger.error("Failed to create combined PPTX: #{inspect(reason)}")
+          {:noreply, put_flash(socket, :error, "Failed to create combined PPTX: #{inspect(reason)}")}
+      end
+    end
+  end
+
+  def handle_event("download_zip_reviewed", _params, socket) do
+    reviewed_profiles =
+      socket.assigns.profiles
+      |> Enum.filter(fn p -> p.status == :reviewed end)
+
+    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates as zip")
+
+    if Enum.empty?(reviewed_profiles) do
+      {:noreply, put_flash(socket, :error, "No reviewed certificates available to download")}
+    else
+      # Create zip file in memory
+      case create_certificates_zip(reviewed_profiles) do
+        {:ok, zip_binary} ->
+          # Send the zip file as a download
+          timestamp = DateTime.utc_now() |> DateTime.to_unix()
+          filename = "baptism_certificates_#{timestamp}.zip"
+
+          {:noreply,
+           socket
+           |> push_event("download_file", %{
+             data: Base.encode64(zip_binary),
+             filename: filename,
+             mime_type: "application/zip"
+           })}
+
+        {:error, reason} ->
+          Logger.error("Failed to create zip file: #{inspect(reason)}")
+          {:noreply, put_flash(socket, :error, "Failed to create zip file: #{inspect(reason)}")}
+      end
+    end
+  end
+
+  def handle_event("download_zip_reviewed", _params, socket) do
+    reviewed_profiles =
+      socket.assigns.profiles
+      |> Enum.filter(fn p -> p.status == :reviewed end)
+
+    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates as zip")
 
     if Enum.empty?(reviewed_profiles) do
       {:noreply, put_flash(socket, :error, "No reviewed certificates available to download")}
@@ -353,6 +420,12 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_info({:extract_error, id, reason}, socket) do
     msg = "Extraction failed for profile #{id}: #{inspect(reason)}"
+    {:noreply, put_flash(socket, :error, msg)}
+  end
+
+  @impl true
+  def handle_info({:upload_error, id, reason}, socket) do
+    msg = if id, do: "Upload failed for profile #{id}: #{inspect(reason)}", else: "Upload failed: #{inspect(reason)}"
     {:noreply, put_flash(socket, :error, msg)}
   end
 

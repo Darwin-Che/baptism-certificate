@@ -73,10 +73,12 @@ FROM ${RUNNER_IMAGE} AS final
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates \
     python3 python3-pip libreoffice-draw libreoffice-impress imagemagick \
+    fonts-noto-cjk fonts-noto-cjk-extra fonts-wqy-microhei fonts-wqy-zenhei \
   && rm -rf /var/lib/apt/lists/*
 
-# Set the locale
+# Set the locale to support Chinese characters
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \
+  && sed -i '/zh_CN.UTF-8/s/^# //g' /etc/locale.gen \
   && locale-gen
 
 ENV LANG=en_US.UTF-8
@@ -90,8 +92,13 @@ RUN chown nobody /app
 COPY --chown=nobody:root python /app/python
 RUN pip3 install --no-cache-dir -r /app/python/requirements.txt --break-system-packages
 
+# Create home directory for nobody user to prevent dconf warnings
+RUN mkdir -p /home/nobody/.cache \
+  && chown -R nobody:nogroup /home/nobody
+
 # set runner ENV
 ENV MIX_ENV="prod"
+ENV HOME=/home/nobody
 
 # Only copy the final release from the build stage
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/baptism_backend ./

@@ -5,6 +5,7 @@ defmodule BaptismBackend.Manager.Server do
   use GenServer
 
   alias BaptismBackend.Extractor
+  alias BaptismBackend.Uploader
   alias BaptismBackend.S3Storage
   alias BaptismBackend.Manager.State
   alias BaptismBackend.Struct.Profile
@@ -131,49 +132,24 @@ defmodule BaptismBackend.Manager.Server do
   end
 
   def handle_call({:create_profile, file_path}, _from, %State{} = state) do
-    parent = self()
-    profiles = state.profiles
-    # Copy the uploaded file to a temp file synchronously
+    # Copy the uploaded file synchronously before LiveView cleans it up
     tmp_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     tmp_path = "/tmp/profile_upload_#{tmp_id}.jpg"
-    File.cp!(file_path, tmp_path)
-    Task.start(fn ->
-      # Calculate the id by hashing the image (8 char hex string)
-      id =
-        tmp_path
-        |> File.read!()
-        |> then(&:crypto.hash(:sha256, &1))
-        |> Base.encode16(case: :lower)
-        |> String.slice(0, 8)
 
-      # Check if ID already exists, if so generate a random one
-      id =
-        if Enum.any?(profiles, fn p -> p.id == id end) do
-          random_suffix =
-            :crypto.strong_rand_bytes(4)
-            |> Base.encode16(case: :lower)
-            |> String.slice(0, 4)
+    case File.cp(file_path, tmp_path) do
+      :ok ->
+        # Get existing profile IDs to check for duplicates
+        existing_ids = Enum.map(state.profiles, & &1.id)
 
-          "dup_#{random_suffix}_#{id}"
-        else
-          id
-        end
+        # Delegate to Uploader GenServer with copied file
+        Uploader.upload(tmp_path, existing_ids, self())
 
-      S3Storage.upload_raw_image(id, tmp_path)
-      S3Storage.upload_compressed_image(id, tmp_path)
-      File.rm(tmp_path)
+        {:reply, :ok, state}
 
-      Logger.info("Uploaded raw image for profile #{id} to S3")
-
-      # Create a new profile struct
-      profile = %Profile{
-        id: id,
-        status: :uploaded
-      }
-
-      send(parent, {:profile_created, profile})
-    end)
-    {:reply, :ok, state}
+      {:error, reason} ->
+        Logger.error("Failed to copy uploaded file: #{inspect(reason)}")
+        {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call({:delete_profile, id}, _from, %State{} = state) do
@@ -295,11 +271,17 @@ defmodule BaptismBackend.Manager.Server do
     {:noreply, state}
   end
 
-  def handle_info({:profile_created, profile}, %State{} = state) do
+  def handle_info({:upload_complete, _id, profile}, %State{} = state) do
     new_state = %{state | profiles: [profile | state.profiles]}
     notify_session(new_state, {:profiles_updated, new_state.profiles})
     S3Storage.save_state(new_state)
     {:noreply, new_state}
+  end
+
+  def handle_info({:upload_error, id, reason}, %State{} = state) do
+    Logger.error("Upload failed for profile #{inspect(id)}: #{inspect(reason)}")
+    notify_session(state, {:upload_error, id, reason})
+    {:noreply, state}
   end
 
   def handle_info({:extraction_result, profile_id, {:ok, resp}}, state) do

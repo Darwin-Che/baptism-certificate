@@ -2,8 +2,8 @@
 
 ```
 docker build -t inference-service .
-docker tag inference-service darwinche/inference-service:v0.0.21
-docker push darwinche/inference-service:v0.0.21
+docker tag inference-service darwinche/inference-service:v0.0.22
+docker push darwinche/inference-service:v0.0.22
 ```
 
 # backend server

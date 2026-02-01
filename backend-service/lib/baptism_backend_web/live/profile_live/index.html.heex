@@ -133,10 +133,16 @@
           <.icon name="hero-document-text" class="w-4 h-4 mr-2" /> Generate All Extracted
         </button>
         <button
-          phx-click="download_all_reviewed"
+          phx-click="download_zip_reviewed"
           class="btn btn-success btn-sm w-full"
         >
-          <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> Download All Reviewed
+          <.icon name="hero-archive-box-arrow-down" class="w-4 h-4 mr-2" /> Download Zip
+        </button>
+        <button
+          phx-click="download_combined_reviewed"
+          class="btn btn-success btn-sm w-full"
+        >
+          <.icon name="hero-document-arrow-down" class="w-4 h-4 mr-2" /> Download Combined
         </button>
       </div>
     </div>
@@ -251,6 +257,15 @@
               >
                 <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Mark as Reviewed
               </button>
+              <a
+                href={BaptismBackend.S3Storage.certificate_pptx_presigned_url(
+                  @selected_profile.id,
+                  "#{String.replace(@selected_profile.name_pinyin || @selected_profile.id, " ", "")}_#{@selected_profile.birthday}.pptx"
+                )}
+                class="btn btn-info"
+              >
+                <.icon name="hero-arrow-down-tray" class="w-5 h-5 mr-2" /> Download Certificate
+              </a>
 
             <% @selected_profile.status == :reviewed -> %>
               <button

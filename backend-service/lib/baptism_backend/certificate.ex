@@ -167,4 +167,67 @@ defmodule BaptismBackend.Certificate do
 
   defp format_date(nil), do: ""
   defp format_date(%Date{} = date), do: Calendar.strftime(date, "%B %d, %Y")
+
+  @doc """
+  Combines multiple certificates into a single PPTX file.
+  Returns {:ok, pptx_binary} or {:error, reason}.
+  """
+  def combine_certificates(profile_ids) do
+    tmp_dir = "/tmp/combine_certs_#{length(profile_ids)}_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(tmp_dir)
+
+    try do
+      # Download all certificates to temp files
+      input_files =
+        profile_ids
+        |> Enum.with_index()
+        |> Enum.map(fn {profile_id, idx} ->
+          case S3Storage.download_certificate(profile_id) do
+            {:ok, content} ->
+              input_path = Path.join(tmp_dir, "input_#{idx}.pptx")
+              File.write!(input_path, content)
+              input_path
+
+            {:error, reason} ->
+              Logger.error("Failed to download certificate #{profile_id}: #{inspect(reason)}")
+              nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      if Enum.empty?(input_files) do
+        {:error, "No certificates could be downloaded"}
+      else
+        # Run Python script to combine PPTX files
+        output_path = Path.join(tmp_dir, "combined.pptx")
+        python_script = find_python_script("combine_pptx.py")
+
+        args = [python_script, output_path | input_files]
+
+        case System.cmd("python3", args, stderr_to_stdout: true) do
+          {output, 0} ->
+            Logger.info("Combined PPTX: #{output}")
+            pptx_binary = File.read!(output_path)
+            {:ok, pptx_binary}
+
+          {error_output, exit_code} ->
+            Logger.error("Failed to combine PPTX files (exit code #{exit_code}): #{error_output}")
+            {:error, "Failed to combine certificates: #{error_output}"}
+        end
+      end
+    after
+      # Clean up temp files
+      File.rm_rf(tmp_dir)
+    end
+  end
+
+  defp find_python_script(script_name) do
+    # In production (Docker), python folder is at /app/python
+    # In dev, it's relative to priv_dir
+    if File.exists?("/app/python/#{script_name}") do
+      "/app/python/#{script_name}"
+    else
+      Path.join(:code.priv_dir(:baptism_backend), "../python/#{script_name}")
+    end
+  end
 end
