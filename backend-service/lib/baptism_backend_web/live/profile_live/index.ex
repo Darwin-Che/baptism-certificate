@@ -210,7 +210,8 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
       "baptism_day" => Map.get(params, "baptism_day", ""),
       "baptism_month" => Map.get(params, "baptism_month", ""),
       "baptism_year" => Map.get(params, "baptism_year", ""),
-      "sign_date" => Map.get(params, "sign_date", "")
+      "sign_date" => Map.get(params, "sign_date", ""),
+      "sign_date_value" => Map.get(params, "sign_date_value", Date.to_string(Date.utc_today()))
     }
 
     :ok = Manager.set_certificate_config(config)

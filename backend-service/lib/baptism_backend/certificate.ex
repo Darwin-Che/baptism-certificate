@@ -136,6 +136,13 @@ defmodule BaptismBackend.Certificate do
     bap_month_config = Map.get(config, "baptism_month", "left=2 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
     bap_year_config = Map.get(config, "baptism_year", "left=3 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
     sign_date_config = Map.get(config, "sign_date", "left=1 top=5.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
+    sign_date_value = Map.get(config, "sign_date_value", Date.to_string(Date.utc_today()))
+
+    # Parse sign_date_value to Date if it's a string
+    sign_date = case Date.from_iso8601(sign_date_value) do
+      {:ok, date} -> date
+      _ -> Date.utc_today()
+    end
 
     """
     template.pptx output_#{profile.id}.pptx
@@ -151,7 +158,7 @@ defmodule BaptismBackend.Certificate do
     #{bap_month_config} align=left
     txt #{format_year(profile.baptism_date)}
     #{bap_year_config} align=left
-    txt #{format_date(Date.utc_today())}
+    txt #{format_date(sign_date)}
     #{sign_date_config} align=left
     """
   end
