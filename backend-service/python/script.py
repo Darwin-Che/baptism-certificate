@@ -5,26 +5,21 @@ from pptx.dml.color import RGBColor
 import sys
 import shlex
 
-# Example input format from stdin:
+# Example input format from file:
 """
 template.pptx output.pptx
 img headshot.jpg
 left=2 top=3 w=3
 txt Hello from Python
-left=1 top=1 w=6 h=1.5
-fontsz=32 align=center
+left=1 top=1 w=6 h=1.5 fontsz=32 align=center
 txt Person's name
-left=1 top=1 w=6 h=1.5
-fontsz=12 align=center
+left=1 top=1 w=6 h=1.5 fontsz=12 align=center
 """
 
-def parse_stdin():
-    lines = []
-    for line in sys.stdin:
-        line = line.rstrip('\n')
-        if line == '':
-            break
-        lines.append(line)
+def parse_input(input_file):
+    with open(input_file, 'r') as f:
+        lines = [line.rstrip('\n') for line in f if line.strip()]
+    
     # First line: template.pptx output.pptx
     template, output = lines[0].split()
     blocks = []
@@ -37,12 +32,16 @@ def parse_stdin():
             i += 2
         elif lines[i].startswith('txt '):
             txt = lines[i][4:]
-            txt_params = {k: float(v) for k, v in (item.split('=') for item in lines[i+1].split())}
+            # Parse combined line with both position and font params
+            all_items = shlex.split(lines[i+1])
+            txt_params = {}
             font_params = {}
-            font_items = shlex.split(lines[i+2])
-            for item in font_items:
+            
+            for item in all_items:
                 k, v = item.split('=', 1)
-                if k == 'fontsz':
+                if k in ['left', 'top', 'w', 'h']:
+                    txt_params[k] = float(v)
+                elif k == 'fontsz':
                     font_params['fontsz'] = int(v)
                 elif k == 'align':
                     font_params['align'] = v
@@ -51,8 +50,9 @@ def parse_stdin():
                     if v.startswith('"') and v.endswith('"'):
                         v = v[1:-1]
                     font_params['font'] = v
+            
             blocks.append({'type': 'txt', 'txt': txt, 'params': txt_params, 'font_params': font_params})
-            i += 3
+            i += 2
         else:
             i += 1
     return {
@@ -105,7 +105,11 @@ def modify_slide(
     prs.save(output_pptx)
 
 if __name__ == "__main__":
-    args = parse_stdin()
+    if len(sys.argv) < 2:
+        print("Usage: python3 script.py <input_file>", file=sys.stderr)
+        sys.exit(1)
+    
+    args = parse_input(sys.argv[1])
     modify_slide(
         template_pptx=args['template_pptx'],
         output_pptx=args['output_pptx'],

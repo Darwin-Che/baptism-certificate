@@ -19,6 +19,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
      |> assign(:show_settings_dialog, false)
      |> assign(:show_flash_messages, false)
      |> assign(:inference_url, Manager.get_inference_url() || "")
+     |> assign(:certificate_config, Manager.get_certificate_config() || %{})
      |> assign(:template_exists, BaptismBackend.S3Storage.template_exists?())
      |> allow_upload(:images,
        accept: ~w(.jpg .jpeg),
@@ -108,41 +109,49 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
 
   @impl true
   def handle_event("generate_certificate", %{"id" => id}, socket) do
-    {:ok, _profile} = Profiles.generate_certificate(id)
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Certificate generated successfully")
-     |> assign(:profiles, Profiles.list_profiles())
-     |> assign(:selected_profile, Profiles.get_profile(id))}
-  end
-
-  @impl true
-  def handle_event("mark_reviewed", %{"id" => id}, socket) do
-    {:ok, _profile} = Profiles.mark_reviewed(id)
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Profile marked as reviewed")
-     |> assign(:profiles, Profiles.list_profiles())
-     |> assign(:selected_profile, Profiles.get_profile(id))}
-  end
-
-  @impl true
-  def handle_event("validate", _params, socket) do
-    Logger.info(
-      "Validate event - Upload entries: #{inspect(socket.assigns.uploads.images.entries)}"
-    )
+    :ok = Manager.generate_certificate([id])
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_event("validate_template", _params, socket) do
-    Logger.info(
-      "Validate template event - Upload entries: #{inspect(socket.assigns.uploads.template_file.entries)}"
-    )
+  def handle_event("mark_reviewed", %{"id" => id}, socket) do
+    :ok = Manager.mark_reviewed([id])
+    {:noreply, socket}
+  end
 
+  @impl true
+  def handle_event("unmark_reviewed", %{"id" => id}, socket) do
+    :ok = Manager.unmark_reviewed([id])
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("generate_all", _params, socket) do
+    profiles = Manager.list_profiles()
+    profile_ids =
+      profiles
+      |> Enum.filter(fn p -> p.status == :extracted end)
+      |> Enum.map(& &1.id)
+
+    # Generate certificates for all extracted profiles (async)
+    Manager.generate_certificate(profile_ids)
+
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Generating certificates for #{length(profile_ids)} profiles (processing in background)"
+     )}
+  end
+
+  @impl true
+  def handle_event("validate", _params, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("validate_template", _params, socket) do
     {:noreply, socket}
   end
 
@@ -190,6 +199,26 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
     else
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("save_certificate_config", params, socket) do
+    config = %{
+      "headshot" => Map.get(params, "headshot", ""),
+      "name" => Map.get(params, "name", ""),
+      "birthday" => Map.get(params, "birthday", ""),
+      "baptism_day" => Map.get(params, "baptism_day", ""),
+      "baptism_month" => Map.get(params, "baptism_month", ""),
+      "baptism_year" => Map.get(params, "baptism_year", ""),
+      "sign_date" => Map.get(params, "sign_date", "")
+    }
+
+    :ok = Manager.set_certificate_config(config)
+
+    {:noreply,
+     socket
+     |> assign(:certificate_config, config)
+     |> put_flash(:info, "Certificate configuration saved")}
   end
 
   @impl true
@@ -243,10 +272,12 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
 
     uploaded_files = consume_uploaded_entries(socket, :template_file, fn %{path: path}, _entry ->
       Logger.info("Uploading template file from #{path}")
-      case BaptismBackend.S3Storage.upload_template(path) do
+      result = case BaptismBackend.S3Storage.upload_template(path) do
         :ok -> {:ok, :success}
         {:error, reason} -> {:postpone, reason}
       end
+      Logger.info("Upload result: #{inspect(result)}")
+      result
     end)
 
     if uploaded_files != [] do
@@ -272,6 +303,38 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
     end
   end
 
+  def handle_event("download_all_reviewed", _params, socket) do
+    reviewed_profiles =
+      socket.assigns.profiles
+      |> Enum.filter(fn p -> p.status == :reviewed end)
+
+    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates")
+
+    if Enum.empty?(reviewed_profiles) do
+      {:noreply, put_flash(socket, :error, "No reviewed certificates available to download")}
+    else
+      # Create zip file in memory
+      case create_certificates_zip(reviewed_profiles) do
+        {:ok, zip_binary} ->
+          # Send the zip file as a download
+          timestamp = DateTime.utc_now() |> DateTime.to_unix()
+          filename = "baptism_certificates_#{timestamp}.zip"
+
+          {:noreply,
+           socket
+           |> push_event("download_file", %{
+             data: Base.encode64(zip_binary),
+             filename: filename,
+             mime_type: "application/zip"
+           })}
+
+        {:error, reason} ->
+          Logger.error("Failed to create zip file: #{inspect(reason)}")
+          {:noreply, put_flash(socket, :error, "Failed to create zip file: #{inspect(reason)}")}
+      end
+    end
+  end
+
   @impl true
   def handle_info({:profiles_updated, profiles}, socket) do
     # Refresh selected_profile if present
@@ -294,6 +357,12 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   end
 
   @impl true
+  def handle_info({:certificate_error, id, reason}, socket) do
+    msg = "Certificate generation failed for profile #{id}: #{inspect(reason)}"
+    {:noreply, put_flash(socket, :error, msg)}
+  end
+
+  @impl true
   def handle_info({:profile_updated, profile}, socket) do
     selected_profile =
       if socket.assigns.selected_profile && socket.assigns.selected_profile.id == profile.id do
@@ -311,5 +380,41 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_info({:inference_url_updated, url}, socket) do
     {:noreply, assign(socket, :inference_url, url)}
+  end
+
+  @impl true
+  def handle_info({:certificate_config_updated, config}, socket) do
+    {:noreply, assign(socket, :certificate_config, config)}
+  end
+
+  # Helper function to create a zip file of all reviewed certificates
+  defp create_certificates_zip(reviewed_profiles) do
+    files =
+      reviewed_profiles
+      |> Enum.map(fn profile ->
+        case BaptismBackend.S3Storage.download_certificate(profile.id) do
+          {:ok, content} ->
+            # Create filename from profile info
+            name = String.replace(profile.name_pinyin || profile.id, " ", "")
+            filename = "#{name}_#{profile.birthday}.pptx"
+            {String.to_charlist(filename), content}
+
+          {:error, _reason} ->
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    if Enum.empty?(files) do
+      {:error, "No certificates could be downloaded"}
+    else
+      case :zip.create("memory.zip", files, [:memory]) do
+        {:ok, {"memory.zip", zip_binary}} ->
+          {:ok, zip_binary}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
   end
 end

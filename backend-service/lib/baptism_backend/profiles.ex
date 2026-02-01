@@ -90,17 +90,6 @@ defmodule BaptismBackend.Profiles do
   end
 
   @doc """
-  Generates a certificate for a profile.
-  """
-  def generate_certificate(id) do
-    # In production, this would generate the certificate
-    update_profile(id, %{
-      status: :generated,
-      certificate_url: "/certificates/#{id}.pdf"
-    })
-  end
-
-  @doc """
   Marks a profile as reviewed.
   """
   def mark_reviewed(id) do

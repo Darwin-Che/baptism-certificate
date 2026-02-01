@@ -43,6 +43,23 @@
     </script>
   <% end %>
 </div>
+
+<!-- Handle file download event (always available) -->
+<script>
+  window.addEventListener('phx:download_file', function(event) {
+    const { data, filename, mime_type } = event.detail;
+    const blob = new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: mime_type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+</script>
+
 <style>
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(20px); }
@@ -101,13 +118,27 @@
         <% end %>
       </form>
       
-<!-- Extract All Button -->
-      <button
-        phx-click="extract_all"
-        class="btn btn-accent btn-sm w-full mt-3"
-      >
-        <.icon name="hero-cpu-chip" class="w-4 h-4 mr-2" /> Extract All Unprocessed
-      </button>
+<!-- Batch Actions -->
+      <div class="space-y-2 mt-3">
+        <button
+          phx-click="extract_all"
+          class="btn btn-accent btn-sm w-full"
+        >
+          <.icon name="hero-cpu-chip" class="w-4 h-4 mr-2" /> Extract All Uploaded
+        </button>
+        <button
+          phx-click="generate_all"
+          class="btn btn-primary btn-sm w-full"
+        >
+          <.icon name="hero-document-text" class="w-4 h-4 mr-2" /> Generate All Extracted
+        </button>
+        <button
+          phx-click="download_all_reviewed"
+          class="btn btn-success btn-sm w-full"
+        >
+          <.icon name="hero-arrow-down-tray" class="w-4 h-4 mr-2" /> Download All Reviewed
+        </button>
+      </div>
     </div>
     
 <!-- Profiles List -->
@@ -115,7 +146,14 @@
       <%= for profile <- @profiles do %>
         <div class={[
           "w-full border-b border-base-300 hover:bg-base-200 transition-colors flex",
-          @selected_profile && @selected_profile.id == profile.id && "bg-primary/10"
+          @selected_profile && @selected_profile.id == profile.id && "bg-primary/10",
+          case profile.status do
+            :uploaded -> "border-l-4 border-l-error"
+            :extracted -> "border-l-4 border-l-warning"
+            :generated -> "border-l-4 border-l-info"
+            :reviewed -> "border-l-4 border-l-success"
+            _ -> ""
+          end
         ]}>
           <button
             phx-click="select_profile"
@@ -163,9 +201,97 @@
   <div class="flex-1 overflow-y-auto">
     <%= if @selected_profile do %>
       <div class="p-8">
+        <!-- Actions -->
+        <div class="mb-6 flex gap-3">
+          <%= cond do %>
+            <% @selected_profile.status == :uploaded -> %>
+              <button
+                phx-click="extract_profile"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-accent"
+              >
+                <.icon name="hero-cpu-chip" class="w-5 h-5 mr-2" /> Extract
+              </button>
+
+            <% @selected_profile.status == :extracted -> %>
+              <button
+                phx-click="extract_profile"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-accent btn-outline"
+              >
+                <.icon name="hero-arrow-path" class="w-5 h-5 mr-2" /> Re-Extract
+              </button>
+              <button
+                phx-click="generate_certificate"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-primary"
+              >
+                <.icon name="hero-document-text" class="w-5 h-5 mr-2" /> Generate Certificate
+              </button>
+
+            <% @selected_profile.status == :generated -> %>
+              <button
+                phx-click="extract_profile"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-accent btn-outline"
+              >
+                <.icon name="hero-arrow-path" class="w-5 h-5 mr-2" /> Re-Extract
+              </button>
+              <button
+                phx-click="generate_certificate"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-primary btn-outline"
+              >
+                <.icon name="hero-arrow-path" class="w-5 h-5 mr-2" /> Re-Generate
+              </button>
+              <button
+                phx-click="mark_reviewed"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-success"
+              >
+                <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Mark as Reviewed
+              </button>
+
+            <% @selected_profile.status == :reviewed -> %>
+              <button
+                phx-click="extract_profile"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-accent btn-outline"
+              >
+                <.icon name="hero-arrow-path" class="w-5 h-5 mr-2" /> Re-Extract
+              </button>
+              <button
+                phx-click="generate_certificate"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-primary btn-outline"
+              >
+                <.icon name="hero-arrow-path" class="w-5 h-5 mr-2" /> Re-Generate
+              </button>
+              <button
+                phx-click="unmark_reviewed"
+                phx-value-id={@selected_profile.id}
+                class="btn btn-warning"
+              >
+                <.icon name="hero-arrow-uturn-left" class="w-5 h-5 mr-2" /> Unmark Reviewed
+              </button>
+              <a
+                href={BaptismBackend.S3Storage.certificate_pptx_presigned_url(
+                  @selected_profile.id,
+                  "#{String.replace(@selected_profile.name_pinyin || @selected_profile.id, " ", "")}_#{@selected_profile.birthday}.pptx"
+                )}
+                class="btn btn-info"
+              >
+                <.icon name="hero-arrow-down-tray" class="w-5 h-5 mr-2" /> Download Certificate
+              </a>
+
+            <% true -> %>
+              <!-- No actions for unknown status -->
+          <% end %>
+        </div>
+
         <div class="grid grid-cols-2 gap-8">
           <!-- Left: Scrollable Images Column -->
-          <div class="flex flex-col h-[880px] overflow-y-auto gap-6">
+          <div class="flex flex-col h-[800px] overflow-y-auto gap-6">
             <%= if @compressed_original_image_url do %>
               <div class="card bg-base-100 shadow-xl w-full">
                 <figure class="bg-base-300 rounded flex items-center justify-center aspect-[210/297] w-full">
@@ -252,30 +378,27 @@
                 </form>
               </div>
             </div>
-          </div>
-        </div>
-        
-<!-- Actions -->
-        <div class="mt-6 flex gap-3">
-          <%= if @selected_profile.status == :extracted do %>
-            <button
-              phx-click="generate_certificate"
-              phx-value-id={@selected_profile.id}
-              class="btn btn-primary"
-            >
-              <.icon name="hero-document-text" class="w-5 h-5 mr-2" /> Generate Certificate
-            </button>
-          <% end %>
 
-          <%= if @selected_profile.status == :generated do %>
-            <button
-              phx-click="mark_reviewed"
-              phx-value-id={@selected_profile.id}
-              class="btn btn-success"
-            >
-              <.icon name="hero-check-circle" class="w-5 h-5 mr-2" /> Mark as Reviewed
-            </button>
-          <% end %>
+            <%= if @selected_profile.status in [:generated, :reviewed] do %>
+              <div class="card bg-base-100 shadow-xl mt-4">
+                <div class="card-body">
+                  <h3 class="card-title">Certificate Preview (PDF)</h3>
+                  <div class="w-full" style="height: 600px;">
+                    <iframe
+                      src={BaptismBackend.S3Storage.presigned_url_pdf("certificate_previews", @selected_profile.id) <> "#toolbar=0&navpanes=0&view=FitH"}
+                      type="application/pdf"
+                      class="w-full h-full rounded-lg shadow-lg border border-base-300"
+                      title="Certificate Preview"
+                    >
+                      <p>Your browser does not support PDFs. 
+                        <a href={BaptismBackend.S3Storage.presigned_url_pdf("certificate_previews", @selected_profile.id)}>Download the PDF</a>.
+                      </p>
+                    </iframe>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
         </div>
       </div>
     <% else %>
@@ -299,7 +422,7 @@
 <%= if @show_settings_dialog do %>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div phx-click="close_settings" class="absolute inset-0"></div>
-    <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-md m-4 relative z-10">
+    <div class="bg-base-100 rounded-lg shadow-xl w-full max-w-3xl m-4 relative z-10">
       <div class="p-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold">Settings</h2>
@@ -328,6 +451,108 @@
             </label>
           </div>
         </div>
+
+        <form phx-submit="save_certificate_config" class="space-y-4 mt-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Certificate Layout Configuration</span>
+            </label>
+            <div class="space-y-2">
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">headshot</span>
+                </label>
+                <input
+                  type="text"
+                  name="headshot"
+                  value={Map.get(@certificate_config, "headshot", "left=5 top=1 w=3")}
+                  placeholder="left=5 top=1 w=3"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">name</span>
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={Map.get(@certificate_config, "name", "left=1 top=1 w=6 h=1.5 fontsz=18")}
+                  placeholder="left=1 top=1 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">birthday</span>
+                </label>
+                <input
+                  type="text"
+                  name="birthday"
+                  value={Map.get(@certificate_config, "birthday", "left=1 top=2.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")}
+                  placeholder="left=1 top=2.5 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">baptism_day</span>
+                </label>
+                <input
+                  type="text"
+                  name="baptism_day"
+                  value={Map.get(@certificate_config, "baptism_day", "left=1 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")}
+                  placeholder="left=1 top=4 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">baptism_month</span>
+                </label>
+                <input
+                  type="text"
+                  name="baptism_month"
+                  value={Map.get(@certificate_config, "baptism_month", "left=2 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")}
+                  placeholder="left=2 top=4 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">baptism_year</span>
+                </label>
+                <input
+                  type="text"
+                  name="baptism_year"
+                  value={Map.get(@certificate_config, "baptism_year", "left=3 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")}
+                  placeholder="left=3 top=4 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+              <div>
+                <label class="label py-1">
+                  <span class="label-text text-xs font-semibold">sign_date</span>
+                </label>
+                <input
+                  type="text"
+                  name="sign_date"
+                  value={Map.get(@certificate_config, "sign_date", "left=1 top=5.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")}
+                  placeholder="left=1 top=5.5 w=6 h=1.5 fontsz=18"
+                  class="input input-bordered input-sm w-full"
+                />
+              </div>
+            </div>
+            <label class="label">
+              <span class="label-text-alt text-xs">
+                Format: left=X top=Y w=WIDTH h=HEIGHT fontsz=SIZE font="FONT" align=left/center/right
+              </span>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm mt-2">
+              Save Configuration
+            </button>
+          </div>
+        </form>
 
         <form phx-submit="upload_template" phx-change="validate_template" class="space-y-4 mt-6">
           <div class="form-control">

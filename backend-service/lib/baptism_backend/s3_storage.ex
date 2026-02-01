@@ -6,6 +6,42 @@ defmodule BaptismBackend.S3Storage do
 
   require Logger
 
+  def upload_file(s3_key, local_path) do
+    case local_path
+         |> ExAws.S3.Upload.stream_file()
+         |> ExAws.S3.upload(bucket_name(), s3_key,
+           content_type: "application/octet-stream",
+           acl: :private
+         )
+         |> ExAws.request() do
+      {:ok, _response} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Upload a PDF file with inline content disposition for browser viewing.
+  """
+  def upload_pdf_preview(s3_key, local_path) do
+    case local_path
+         |> ExAws.S3.Upload.stream_file()
+         |> ExAws.S3.upload(bucket_name(), s3_key,
+           content_type: "application/pdf",
+           content_disposition: "inline",
+           acl: :private
+         )
+         |> ExAws.request() do
+      {:ok, _response} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @spec fetch_state() :: {:ok, State.t()} | {:error, any()}
   def fetch_state do
     case bucket_name()
@@ -112,6 +148,43 @@ defmodule BaptismBackend.S3Storage do
     url
   end
 
+  def presigned_url_pdf(folder, id, expires_in \\ 600) do
+    key = "#{folder}/#{id}.pdf"
+
+    {:ok, url} =
+      ExAws.S3.presigned_url(
+        ExAws.Config.new(:s3),
+        :get,
+        bucket_name(),
+        key,
+        expires_in: expires_in,
+        query_params: [{"response-content-disposition", "inline"}]
+      )
+
+    url
+  end
+
+  @doc """
+  Get a presigned URL for downloading a certificate PPTX file.
+  """
+  @spec certificate_pptx_presigned_url(String.t(), String.t() | nil, integer()) :: String.t()
+  def certificate_pptx_presigned_url(id, filename \\ nil, expires_in \\ 600) do
+    key = "certificates/#{id}.pptx"
+    download_filename = filename || "certificate_#{id}.pptx"
+
+    {:ok, url} =
+      ExAws.S3.presigned_url(
+        ExAws.Config.new(:s3),
+        :get,
+        bucket_name(),
+        key,
+        query_params: [{"response-content-disposition", "attachment; filename=\"#{download_filename}\""}],
+        expires_in: expires_in
+      )
+
+    url
+  end
+
   def bucket_name do
     "headshot-plus-text-extractor"
   end
@@ -167,5 +240,93 @@ defmodule BaptismBackend.S3Storage do
         expires_in: expires_in
       )
     url
+  end
+
+  @doc """
+  Download a template file from S3 to a local path.
+  """
+  @spec download_template(String.t()) :: :ok | {:error, any()}
+  def download_template(local_path) do
+    key = "template.pptx"
+
+    case bucket_name()
+         |> ExAws.S3.get_object(key)
+         |> ExAws.request() do
+      {:ok, %{body: body}} ->
+        File.write(local_path, body)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Download a headshot image from S3 to a local path.
+  """
+  @spec download_headshot(String.t(), String.t()) :: :ok | {:error, any()}
+  def download_headshot(id, local_path) do
+    key = "headshots/#{id}.jpg"
+
+    case bucket_name()
+         |> ExAws.S3.get_object(key)
+         |> ExAws.request() do
+      {:ok, %{body: body}} ->
+        File.write(local_path, body)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Download a certificate PPTX file from S3 and return the binary content.
+  """
+  @spec download_certificate(String.t()) :: {:ok, binary()} | {:error, any()}
+  def download_certificate(id) do
+    key = "certificates/#{id}.pptx"
+
+    case bucket_name()
+         |> ExAws.S3.get_object(key)
+         |> ExAws.request() do
+      {:ok, %{body: body}} ->
+        {:ok, body}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Delete all S3 files associated with a profile ID.
+  Removes files from: raw_images, compressed_images, headshots, papers, certificates, certificate_previews
+  """
+  @spec delete_profile_files(String.t()) :: :ok
+  def delete_profile_files(id) do
+    folders = [
+      {"raw_images", ".jpg"},
+      {"compressed_images", ".jpg"},
+      {"headshots", ".jpg"},
+      {"papers", ".jpg"},
+      {"certificates", ".pptx"},
+      {"certificate_previews", ".pdf"}
+    ]
+
+    Enum.each(folders, fn {folder, ext} ->
+      key = "#{folder}/#{id}#{ext}"
+
+      case bucket_name()
+           |> ExAws.S3.delete_object(key)
+           |> ExAws.request() do
+        {:ok, _} ->
+          Logger.info("Deleted S3 file: #{key}")
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("Failed to delete S3 file #{key}: #{inspect(reason)}")
+          :ok  # Continue even if delete fails (file might not exist)
+      end
+    end)
+
+    :ok
   end
 end

@@ -11,6 +11,8 @@ defmodule BaptismBackend.Application do
       BaptismBackendWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:baptism_backend, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BaptismBackend.PubSub},
+      # Start the Extractor GenServer for rate-limited inference calls
+      BaptismBackend.Extractor,
       # Start the Manager GenServer
       BaptismBackend.Manager.Server,
       # Start to serve requests, typically the last entry

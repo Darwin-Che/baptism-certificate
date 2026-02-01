@@ -5,21 +5,24 @@ defmodule BaptismBackend.Manager.State do
 
   alias BaptismBackend.Struct.Profile
 
-  @derive {Jason.Encoder, only: [:profiles, :inference_url]}
+  @derive {Jason.Encoder, only: [:profiles, :inference_url, :certificate_config]}
   defstruct profiles: [],
             session_pid: nil,
-            inference_url: nil
+            inference_url: nil,
+            certificate_config: %{}
 
   @type t :: %__MODULE__{
           profiles: [Profile.t()],
           session_pid: pid() | nil,
-          inference_url: String.t() | nil
+          inference_url: String.t() | nil,
+          certificate_config: map()
         }
 
   def from_json(%{"profiles" => profiles} = json) do
     %__MODULE__{
       profiles: Enum.map(profiles, &Profile.from_json/1),
-      inference_url: Map.get(json, "inference_url")
+      inference_url: Map.get(json, "inference_url"),
+      certificate_config: Map.get(json, "certificate_config", %{})
     }
   end
 end

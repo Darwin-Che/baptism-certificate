@@ -49,11 +49,16 @@ defmodule BaptismBackend.Manager.Server do
   end
 
   def generate_certificate(profile_ids) do
-    GenServer.call(__MODULE__, {:generate_certificate, profile_ids})
+    GenServer.cast(__MODULE__, {:generate_certificate, profile_ids})
+    :ok
   end
 
   def mark_reviewed(profile_ids) do
     GenServer.call(__MODULE__, {:mark_reviewed, profile_ids})
+  end
+
+  def unmark_reviewed(profile_ids) do
+    GenServer.call(__MODULE__, {:unmark_reviewed, profile_ids})
   end
 
   def get_inference_url do
@@ -62,6 +67,14 @@ defmodule BaptismBackend.Manager.Server do
 
   def set_inference_url(url) do
     GenServer.call(__MODULE__, {:set_inference_url, url})
+  end
+
+  def get_certificate_config do
+    GenServer.call(__MODULE__, :get_certificate_config)
+  end
+
+  def set_certificate_config(config) do
+    GenServer.call(__MODULE__, {:set_certificate_config, config})
   end
 
   # Genserver Internal Callbacks
@@ -89,11 +102,27 @@ defmodule BaptismBackend.Manager.Server do
     {:reply, state.inference_url, state}
   end
 
+  def handle_call(:get_certificate_config, _from, %State{} = state) do
+    {:reply, state.certificate_config, state}
+  end
+
   def handle_call({:set_inference_url, url}, _from, %State{} = state) do
     new_state = %{state | inference_url: url}
 
     # Notify the session about the update
     notify_session(new_state, {:inference_url_updated, url})
+
+    # Persist state to S3
+    S3Storage.save_state(new_state)
+
+    {:reply, :ok, new_state}
+  end
+
+  def handle_call({:set_certificate_config, config}, _from, %State{} = state) do
+    new_state = %{state | certificate_config: config}
+
+    # Notify the session about the update
+    notify_session(new_state, {:certificate_config_updated, config})
 
     # Persist state to S3
     S3Storage.save_state(new_state)
@@ -155,6 +184,9 @@ defmodule BaptismBackend.Manager.Server do
         {:reply, {:error, :not_found}, state}
 
       _profile ->
+        # Delete S3 files associated with this profile
+        S3Storage.delete_profile_files(id)
+
         updated_profiles = Enum.reject(state.profiles, fn p -> p.id == id end)
         new_state = %{state | profiles: updated_profiles}
 
@@ -197,26 +229,18 @@ defmodule BaptismBackend.Manager.Server do
     end
   end
 
-  def handle_call({:generate_certificate, profile_ids}, _from, %State{} = state) do
-    # In production, this would generate the certificate
-    updated_profiles =
-      Enum.map(state.profiles, fn %Profile{} = profile ->
-        if profile.id in profile_ids && profile.status == :extracted do
-          %{profile | status: :generated}
-        else
-          profile
-        end
-      end)
-
-    new_state = %{state | profiles: updated_profiles}
-
-    # Notify the session about all profiles
-    notify_session(new_state, {:profiles_updated, new_state.profiles})
-
-    # Persist state to S3
-    S3Storage.save_state(new_state)
-
-    {:reply, :ok, new_state}
+  def handle_cast({:generate_certificate, profile_ids}, %State{} = state) do
+    Enum.each(state.profiles, fn %Profile{} = profile ->
+      if profile.id in profile_ids do
+        parent = self()
+        config = state.certificate_config
+        Task.start(fn ->
+          result = BaptismBackend.Certificate.generate_certificate(profile, config)
+          send(parent, {:certificate_result, profile.id, result})
+        end)
+      end
+    end)
+    {:noreply, state}
   end
 
   def handle_call({:mark_reviewed, profile_ids}, _from, %State{} = state) do
@@ -240,14 +264,32 @@ defmodule BaptismBackend.Manager.Server do
     {:reply, :ok, new_state}
   end
 
+  def handle_call({:unmark_reviewed, profile_ids}, _from, %State{} = state) do
+    updated_profiles =
+      Enum.map(state.profiles, fn %Profile{} = profile ->
+        if profile.id in profile_ids && profile.status == :reviewed do
+          %{profile | status: :generated}
+        else
+          profile
+        end
+      end)
+
+    new_state = %{state | profiles: updated_profiles}
+
+    # Notify the session about all profiles
+    notify_session(new_state, {:profiles_updated, new_state.profiles})
+
+    # Persist state to S3
+    S3Storage.save_state(new_state)
+
+    {:reply, :ok, new_state}
+  end
+
   def handle_cast({:extract_profiles, profile_ids}, %State{} = state) do
     Enum.each(state.profiles, fn %Profile{} = profile ->
       if profile.id in profile_ids do
-        parent = self()
-        Task.start(fn ->
-          result = Extractor.extract(profile.id, state.inference_url)
-          send(parent, {:extraction_result, profile.id, result})
-        end)
+        # Send to Extractor which will handle rate limiting
+        Extractor.extract(profile.id, state.inference_url, self())
       end
     end)
     {:noreply, state}
@@ -279,6 +321,27 @@ defmodule BaptismBackend.Manager.Server do
   def handle_info({:extraction_result, profile_id, {:error, reason}}, state) do
     Logger.error("Extraction failed for profile #{profile_id}: #{inspect(reason)}")
     notify_session(state, {:extract_error, profile_id, reason})
+    {:noreply, state}
+  end
+
+  def handle_info({:certificate_result, profile_id, :ok}, state) do
+    Logger.info("Certificate generation succeeded for profile #{profile_id}")
+    updated_profiles = Enum.map(state.profiles, fn profile ->
+      if profile.id == profile_id do
+        %{profile | status: :generated}
+      else
+        profile
+      end
+    end)
+    new_state = %{state | profiles: updated_profiles}
+    notify_session(new_state, {:profiles_updated, new_state.profiles})
+    S3Storage.save_state(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_info({:certificate_result, profile_id, {:error, reason}}, state) do
+    Logger.error("Certificate generation failed for profile #{profile_id}: #{inspect(reason)}")
+    notify_session(state, {:certificate_error, profile_id, reason})
     {:noreply, state}
   end
 
