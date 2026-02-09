@@ -208,12 +208,8 @@ defmodule BaptismBackend.Manager.Server do
   def handle_cast({:generate_certificate, profile_ids}, %State{} = state) do
     Enum.each(state.profiles, fn %Profile{} = profile ->
       if profile.id in profile_ids do
-        parent = self()
-        config = state.certificate_config
-        Task.start(fn ->
-          result = BaptismBackend.Certificate.generate_certificate(profile, config)
-          send(parent, {:certificate_result, profile.id, result})
-        end)
+        # Send to Certificate GenServer which will handle rate limiting
+        BaptismBackend.Certificate.generate_certificate(profile, state.certificate_config, self())
       end
     end)
     {:noreply, state}

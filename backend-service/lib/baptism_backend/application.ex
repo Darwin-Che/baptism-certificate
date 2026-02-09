@@ -13,6 +13,8 @@ defmodule BaptismBackend.Application do
       {Phoenix.PubSub, name: BaptismBackend.PubSub},
       # Start the Extractor GenServer for rate-limited inference calls
       BaptismBackend.Extractor,
+      # Start the Certificate GenServer for rate-limited certificate generation
+      BaptismBackend.Certificate,
       # Start the Uploader GenServer for rate-limited image uploads
       BaptismBackend.Uploader,
       # Start the Manager GenServer

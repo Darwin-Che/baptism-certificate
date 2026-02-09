@@ -59,6 +59,45 @@ defmodule BaptismBackend.Struct.Profile do
   defp parse_status("generated"), do: :generated
   defp parse_status("reviewed"), do: :reviewed
 
+  @doc """
+  Normalize name_pinyin to ensure words are separated by comma+space.
+  Converts "Sun JianFen" -> "Sun, JianFen"
+  Converts "Sun Jian Fen" -> "Sun, JianFen" (combines words after first)
+  Converts "Sun,JianFen" -> "Sun, JianFen"
+  """
+  defp normalize_name_pinyin(nil), do: nil
+  defp normalize_name_pinyin(""), do: ""
+  defp normalize_name_pinyin(name) do
+    name
+    |> String.trim()
+    # First normalize any existing commas to have consistent spacing
+    |> String.replace(~r/,\s*/, ", ")
+    # Split by comma or space to get all parts
+    |> then(fn n ->
+      cond do
+        # If already has comma, just ensure proper spacing (already done above)
+        String.contains?(n, ",") ->
+          n
+
+        # If has spaces, split and recombine: first word, then rest without spaces
+        String.contains?(n, " ") ->
+          parts = String.split(n, " ", trim: true)
+          case parts do
+            [first | rest] when rest != [] ->
+              # Combine all words after the first into one word
+              given_name = Enum.join(rest, "")
+              "#{first}, #{given_name}"
+            _ ->
+              n
+          end
+
+        # No comma or space, return as-is
+        true ->
+          n
+      end
+    end)
+  end
+
   def apply_extraction_result(%__MODULE__{} = profile, %{
         "parse_ocr_result" => %{
           "name_cn" => name_cn,
@@ -70,7 +109,7 @@ defmodule BaptismBackend.Struct.Profile do
     %__MODULE__{
       profile
       | name_cn: name_cn,
-        name_pinyin: name_pinyin,
+        name_pinyin: normalize_name_pinyin(name_pinyin),
         birthday: parse_date(birthday),
         baptism_date: parse_date(baptism_date)
     }

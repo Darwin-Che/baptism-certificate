@@ -27,6 +27,10 @@ def download_headshot(filename: str, local_path: str):
     remote_path = f"headshots/{filename}"
     s3.download_file(BUCKET, remote_path, local_path)
 
+def upload_headshot_rembg(filename: str, local_path: str):
+    remote_path = f"headshots_rembg/{filename}"
+    s3.upload_file(local_path, BUCKET, remote_path, ExtraArgs={"ContentType": "image/png"})
+
 def upload_paper(filename: str, local_path: str):
     remote_path = f"papers/{filename}"
     s3.upload_file(local_path, BUCKET, remote_path, ExtraArgs={"ContentType": "image/jpeg"})

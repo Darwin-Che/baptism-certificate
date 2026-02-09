@@ -51,7 +51,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
       if profile, do: BaptismBackend.S3Storage.presigned_url("compressed_images", profile.id), else: nil
 
     headshot_url =
-      if profile, do: BaptismBackend.S3Storage.presigned_url("headshots", profile.id), else: nil
+      if profile, do: BaptismBackend.S3Storage.presigned_url("headshots_rembg", profile.id), else: nil
 
     paper_url =
       if profile, do: BaptismBackend.S3Storage.presigned_url("papers", profile.id), else: nil
@@ -142,6 +142,25 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
        socket,
        :info,
        "Generating certificates for #{length(profile_ids)} profiles (processing in background)"
+     )}
+  end
+
+  @impl true
+  def handle_event("regenerate_all", _params, socket) do
+    profiles = Manager.list_profiles()
+    profile_ids =
+      profiles
+      |> Enum.filter(fn p -> p.status in [:extracted, :generated, :reviewed] end)
+      |> Enum.map(& &1.id)
+
+    # Generate certificates for all profiles (async)
+    Manager.generate_certificate(profile_ids)
+
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Re-generating certificates for #{length(profile_ids)} profiles (processing in background)"
      )}
   end
 
@@ -247,6 +266,25 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
        socket,
        :info,
        "Sent #{length(profile_ids)} profiles for extraction (processing in background)"
+     )}
+  end
+
+  @impl true
+  def handle_event("reextract_all", _params, socket) do
+    profiles = Manager.list_profiles()
+    profile_ids =
+      profiles
+      |> Enum.filter(fn p -> p.status in [:uploaded, :extracted, :generated, :reviewed] end)
+      |> Enum.map(& &1.id)
+
+    # Send to inference server (async)
+    Manager.extract_profiles(profile_ids)
+
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Re-extracting #{length(profile_ids)} profiles (processing in background)"
      )}
   end
 

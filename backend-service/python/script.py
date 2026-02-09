@@ -91,7 +91,7 @@ def modify_slide(
             para = text_frame.paragraphs[0]
             para.text = block['txt']
             para.font.size = Pt(f['fontsz'])
-            para.font.bold = True
+            para.font.bold = False
             # para.font.color.rgb = RGBColor(255, 255, 255)
             if 'font' in f:
                 para.font.name = f['font']

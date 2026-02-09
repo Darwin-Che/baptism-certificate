@@ -23,13 +23,13 @@ defmodule BaptismBackend.S3Storage do
   end
 
   @doc """
-  Upload a PDF file with inline content disposition for browser viewing.
+  Upload a PNG preview file with inline content disposition for browser viewing.
   """
   def upload_pdf_preview(s3_key, local_path) do
     case local_path
          |> ExAws.S3.Upload.stream_file()
          |> ExAws.S3.upload(bucket_name(), s3_key,
-           content_type: "application/pdf",
+           content_type: "image/png",
            content_disposition: "inline",
            acl: :private
          )
@@ -130,7 +130,7 @@ defmodule BaptismBackend.S3Storage do
   end
 
   @doc """
-  folder can be "raw_images", "headshots", or "papers"
+  folder can be "raw_images", "headshots[_rembg]", or "papers"
   """
   @spec presigned_url(String.t(), String.t(), integer()) :: String.t()
   def presigned_url(folder, id, expires_in \\ 600) do
@@ -148,8 +148,8 @@ defmodule BaptismBackend.S3Storage do
     url
   end
 
-  def presigned_url_pdf(folder, id, expires_in \\ 600) do
-    key = "#{folder}/#{id}.pdf"
+  def presigned_url_png(folder, id, expires_in \\ 600) do
+    key = "#{folder}/#{id}.png"
 
     {:ok, url} =
       ExAws.S3.presigned_url(
@@ -265,7 +265,7 @@ defmodule BaptismBackend.S3Storage do
   """
   @spec download_headshot(String.t(), String.t()) :: :ok | {:error, any()}
   def download_headshot(id, local_path) do
-    key = "headshots/#{id}.jpg"
+    key = "headshots_rembg/#{id}.jpg"
 
     case bucket_name()
          |> ExAws.S3.get_object(key)
@@ -306,9 +306,10 @@ defmodule BaptismBackend.S3Storage do
       {"raw_images", ".jpg"},
       {"compressed_images", ".jpg"},
       {"headshots", ".jpg"},
+      {"headshots_rembg", ".jpg"},
       {"papers", ".jpg"},
       {"certificates", ".pptx"},
-      {"certificate_previews", ".pdf"}
+      {"certificate_previews", ".png"}
     ]
 
     Enum.each(folders, fn {folder, ext} ->

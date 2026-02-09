@@ -1,8 +1,10 @@
 defmodule BaptismBackend.Certificate do
   @moduledoc """
-  Module for generating baptism certificates.
+  Module for generating baptism certificates with rate limiting.
+  Limits concurrent certificate generations to avoid overwhelming system resources.
   """
 
+  use GenServer
   alias BaptismBackend.S3Storage
   alias BaptismBackend.Struct.Profile
 
@@ -10,12 +12,100 @@ defmodule BaptismBackend.Certificate do
 
   @work_dir "/tmp/python-script"
   @template_path Path.join(@work_dir, "template.pptx")
+  @max_concurrent 3
+
+  # Client API
+
+  def start_link(_opts) do
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
 
   @doc """
-  Generates a baptism certificate for the given profile data.
+  Queues a certificate generation task.
+  Returns immediately - the caller should handle the result via message passing.
   """
+  def generate_certificate(profile, config, reply_to) do
+    GenServer.cast(__MODULE__, {:generate, profile, config, reply_to})
+  end
 
-  def generate_certificate(%Profile{} = profile, config) do
+  @doc """
+  Returns the current status of the generation queue.
+  Returns %{active: count, queued: count}
+  """
+  def get_status do
+    GenServer.call(__MODULE__, :get_status)
+  end
+
+  # Server Callbacks
+
+  @impl true
+  def init(_) do
+    state = %{
+      queue: :queue.new(),
+      active: MapSet.new()
+    }
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_call(:get_status, _from, state) do
+    status = %{
+      active: MapSet.size(state.active),
+      queued: :queue.len(state.queue)
+    }
+    {:reply, status, state}
+  end
+
+  @impl true
+  def handle_cast({:generate, profile, config, reply_to}, state) do
+    # Add to queue
+    new_queue = :queue.in({profile, config, reply_to}, state.queue)
+    new_state = %{state | queue: new_queue}
+
+    # Try to process queue
+    new_state = process_queue(new_state)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_info({:generation_complete, profile_id}, state) do
+    # Remove from active set
+    new_active = MapSet.delete(state.active, profile_id)
+    new_state = %{state | active: new_active}
+
+    # Try to process next in queue
+    new_state = process_queue(new_state)
+    {:noreply, new_state}
+  end
+
+  # Private Helpers
+
+  defp process_queue(state) do
+    active_count = MapSet.size(state.active)
+
+    if active_count < @max_concurrent and !:queue.is_empty(state.queue) do
+      # Get next item from queue
+      {{:value, {profile, config, reply_to}}, new_queue} = :queue.out(state.queue)
+
+      # Start generation task
+      parent = self()
+      Task.start(fn ->
+        result = do_generate_certificate(profile, config)
+        send(reply_to, {:certificate_result, profile.id, result})
+        send(parent, {:generation_complete, profile.id})
+      end)
+
+      Logger.info("Started certificate generation for #{profile.id} (#{active_count + 1}/#{@max_concurrent} active)")
+
+      # Update state and recursively process
+      new_state = %{state | queue: new_queue, active: MapSet.put(state.active, profile.id)}
+      process_queue(new_state)
+    else
+      state
+    end
+  end
+
+  defp do_generate_certificate(%Profile{} = profile, config) do
     with :ok <- ensure_directory(),
          :ok <- maybe_fetch_template(),
          :ok <- fetch_headshot(profile.id),
@@ -79,23 +169,41 @@ defmodule BaptismBackend.Certificate do
   end
 
   defp upload_pptx_preview(id) do
-    Logger.info("Uploading PDF preview for profile #{id}")
-    local_path = Path.join(@work_dir, "output_#{id}.pdf")
-    S3Storage.upload_pdf_preview("certificate_previews/#{id}.pdf", local_path)
+    Logger.info("Uploading PNG preview for profile #{id}")
+    local_path = Path.join(@work_dir, "output_#{id}.png")
+    S3Storage.upload_pdf_preview("certificate_previews/#{id}.png", local_path)
   end
 
   defp cleanup_files(id) do
     File.rm(Path.join(@work_dir, "headshot_#{id}.jpg"))
     File.rm(Path.join(@work_dir, "output_#{id}.pptx"))
-    File.rm(Path.join(@work_dir, "output_#{id}.pdf"))
+    File.rm(Path.join(@work_dir, "output_#{id}.png"))
   end
 
   defp generate_pptx_preview(id) do
     output_path = Path.join(@work_dir, "output_#{id}.pptx")
-    Logger.info("Generating PDF preview for #{id}")
-    case System.cmd("soffice", ["--headless", "--convert-to", "pdf", output_path], cd: @work_dir) do
-      {_output, 0} -> :ok
-      {error, _code} -> {:error, {:soffice_failed, error}}
+    Logger.info("Generating PNG preview for #{id}")
+
+    case System.cmd("soffice", ["--headless", "--convert-to", "png", output_path], cd: @work_dir) do
+      {_output, 0} ->
+        # LibreOffice might create output_<id>_1.png instead of output_<id>.png
+        expected_png = Path.join(@work_dir, "output_#{id}.png")
+        alternative_png = Path.join(@work_dir, "output_#{id}_1.png")
+
+        cond do
+          File.exists?(expected_png) ->
+            Logger.info("PNG created at expected path: #{expected_png}")
+            :ok
+          File.exists?(alternative_png) ->
+            Logger.info("PNG created with page number, renaming from #{alternative_png} to #{expected_png}")
+            File.rename(alternative_png, expected_png)
+          true ->
+            Logger.error("PNG file not found at expected locations")
+            {:error, {:png_not_found, "Expected #{expected_png} or #{alternative_png}"}}
+        end
+
+      {error, _code} ->
+        {:error, {:soffice_failed, error}}
     end
   end
 

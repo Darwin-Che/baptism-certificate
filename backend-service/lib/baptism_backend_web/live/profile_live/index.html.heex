@@ -120,30 +120,53 @@
       
 <!-- Batch Actions -->
       <div class="space-y-2 mt-3">
-        <button
-          phx-click="extract_all"
-          class="btn btn-accent btn-sm w-full"
-        >
-          <.icon name="hero-cpu-chip" class="w-4 h-4 mr-2" /> Extract All Uploaded
-        </button>
-        <button
-          phx-click="generate_all"
-          class="btn btn-primary btn-sm w-full"
-        >
-          <.icon name="hero-document-text" class="w-4 h-4 mr-2" /> Generate All Extracted
-        </button>
-        <button
-          phx-click="download_zip_reviewed"
-          class="btn btn-success btn-sm w-full"
-        >
-          <.icon name="hero-archive-box-arrow-down" class="w-4 h-4 mr-2" /> Download Zip
-        </button>
-        <button
-          phx-click="download_combined_reviewed"
-          class="btn btn-success btn-sm w-full"
-        >
-          <.icon name="hero-document-arrow-down" class="w-4 h-4 mr-2" /> Download Combined
-        </button>
+        <!-- Extract Row -->
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            phx-click="extract_all"
+            class="btn btn-accent btn-sm"
+          >
+            <.icon name="hero-cpu-chip" class="w-4 h-4 mr-1" /> Extract All Uploaded
+          </button>
+          <button
+            phx-click="reextract_all"
+            class="btn btn-warning btn-sm"
+          >
+            <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> Re-Extract All
+          </button>
+        </div>
+
+        <!-- Generate Row -->
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            phx-click="generate_all"
+            class="btn btn-primary btn-sm"
+          >
+            <.icon name="hero-document-text" class="w-4 h-4 mr-1" /> Generate All Extracted
+          </button>
+          <button
+            phx-click="regenerate_all"
+            class="btn btn-warning btn-sm"
+          >
+            <.icon name="hero-arrow-path" class="w-4 h-4 mr-1" /> Re-Generate All
+          </button>
+        </div>
+
+        <!-- Download Row -->
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            phx-click="download_zip_reviewed"
+            class="btn btn-success btn-sm"
+          >
+            <.icon name="hero-archive-box-arrow-down" class="w-4 h-4 mr-1" /> Download Zip
+          </button>
+          <button
+            phx-click="download_combined_reviewed"
+            class="btn btn-success btn-sm"
+          >
+            <.icon name="hero-document-arrow-down" class="w-4 h-4 mr-1" /> Download Combined
+          </button>
+        </div>
       </div>
     </div>
     
@@ -397,18 +420,13 @@
             <%= if @selected_profile.status in [:generated, :reviewed] do %>
               <div class="card bg-base-100 shadow-xl mt-4">
                 <div class="card-body">
-                  <h3 class="card-title">Certificate Preview (PDF)</h3>
-                  <div class="w-full" style="height: 600px;">
-                    <iframe
-                      src={BaptismBackend.S3Storage.presigned_url_pdf("certificate_previews", @selected_profile.id) <> "#toolbar=0&navpanes=0&view=FitH"}
-                      type="application/pdf"
-                      class="w-full h-full rounded-lg shadow-lg border border-base-300"
-                      title="Certificate Preview"
-                    >
-                      <p>Your browser does not support PDFs. 
-                        <a href={BaptismBackend.S3Storage.presigned_url_pdf("certificate_previews", @selected_profile.id)}>Download the PDF</a>.
-                      </p>
-                    </iframe>
+                  <h3 class="card-title">Certificate Preview</h3>
+                  <div class="w-full">
+                    <img
+                      src={BaptismBackend.S3Storage.presigned_url_png("certificate_previews", @selected_profile.id)}
+                      alt="Certificate Preview"
+                      class="w-full rounded-lg shadow-lg border border-base-300"
+                    />
                   </div>
                 </div>
               </div>
