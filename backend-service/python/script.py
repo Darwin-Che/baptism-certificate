@@ -2,8 +2,11 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
+from pptx.oxml.ns import qn
+from pptx.oxml.xmlchemy import OxmlElement
 import sys
 import shlex
+import re
 
 # Example input format from file:
 """
@@ -45,11 +48,11 @@ def parse_input(input_file):
                     font_params['fontsz'] = int(v)
                 elif k == 'align':
                     font_params['align'] = v
-                elif k == 'font':
+                elif k == 'font_cn':
                     # Remove quotes if present
                     if v.startswith('"') and v.endswith('"'):
                         v = v[1:-1]
-                    font_params['font'] = v
+                    font_params['font_cn'] = v
             
             blocks.append({'type': 'txt', 'txt': txt, 'params': txt_params, 'font_params': font_params})
             i += 2
@@ -89,12 +92,39 @@ def modify_slide(
             text_frame = textbox.text_frame
             text_frame.clear()
             para = text_frame.paragraphs[0]
-            para.text = block['txt']
-            para.font.size = Pt(f['fontsz'])
-            para.font.bold = False
-            # para.font.color.rgb = RGBColor(255, 255, 255)
-            if 'font' in f:
-                para.font.name = f['font']
+
+            # Add text
+            en, zh = split_en_zh(block['txt'])
+
+            if en:
+                r_en = para.add_run()
+                r_en.text = en
+                r_en.font.name = 'Times New Roman'  # Default English font
+                r_en.font.size = Pt(f['fontsz'])
+
+            if zh:
+                r_zh = para.add_run()
+                r_zh.text = zh
+                r_zh.font.size = Pt(f['fontsz'])
+                rPr = r_zh.font._element  # this is the <a:rPr> element
+
+                font_cn = f['font_cn'] or "SimSun"
+
+                # Add <a:latin typeface="SimSun"/> if not already present
+                latin = rPr.find(qn('a:latin'))
+                if latin is None:
+                    latin = OxmlElement('a:latin')
+                    latin.set('typeface', font_cn)
+                    rPr.insert(0, latin)
+
+                # Add <a:ea typeface="SimSun"/>
+                ea = rPr.find(qn('a:ea'))
+                if ea is None:
+                    ea = OxmlElement('a:ea')
+                    ea.set('typeface', font_cn)
+                    # Insert after <a:latin> if it exists
+                    rPr.insert(1, ea)
+
             if f['align'] == 'center':
                 para.alignment = PP_ALIGN.CENTER
             elif f['align'] == 'left':
@@ -103,6 +133,24 @@ def modify_slide(
                 para.alignment = PP_ALIGN.RIGHT
 
     prs.save(output_pptx)
+
+CJK_RE = re.compile(
+    r'[\u3400-\u4DBF\u4E00-\u9FFF\U00020000-\U0002A6DF]'
+)
+
+def split_en_zh(text: str):
+    """
+    Returns (english_part, chinese_part)
+    - english_part may be the full string
+    - chinese_part may be empty
+    """
+    m = CJK_RE.search(text)
+    if m is None:
+        # English-only (or Latin-only)
+        return text, ""
+
+    idx = m.start()
+    return text[:idx], text[idx:]
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
