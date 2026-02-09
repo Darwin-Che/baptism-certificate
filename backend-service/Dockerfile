@@ -92,6 +92,11 @@ RUN chown nobody /app
 COPY --chown=nobody:root python /app/python
 RUN pip3 install --no-cache-dir -r /app/python/requirements.txt --break-system-packages
 
+# Install SimSun font for Chinese text rendering
+RUN mkdir -p /usr/share/fonts/truetype/custom
+COPY python/simsun.ttc /usr/share/fonts/truetype/custom/simsun.ttc
+RUN fc-cache -f -v
+
 # Create home directory for nobody user to prevent dconf warnings
 RUN mkdir -p /home/nobody/.cache \
   && chown -R nobody:nogroup /home/nobody

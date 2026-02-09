@@ -3,14 +3,14 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'backend-service-twilight-river-6539'
+app = 'baptism-certificate'
 primary_region = 'yyz'
 kill_signal = 'SIGTERM'
 
 [build]
 
 [env]
-  PHX_HOST = 'backend-service-twilight-river-6539.fly.dev'
+  PHX_HOST = 'baptism-certificate.fly.dev'
   PORT = '8080'
 
 [http_service]
