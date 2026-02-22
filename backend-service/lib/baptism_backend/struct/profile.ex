@@ -67,6 +67,7 @@ defmodule BaptismBackend.Struct.Profile do
   """
   defp normalize_name_pinyin(nil), do: nil
   defp normalize_name_pinyin(""), do: ""
+
   defp normalize_name_pinyin(name) do
     name
     |> String.trim()
@@ -82,11 +83,13 @@ defmodule BaptismBackend.Struct.Profile do
         # If has spaces, split and recombine: first word, then rest without spaces
         String.contains?(n, " ") ->
           parts = String.split(n, " ", trim: true)
+
           case parts do
             [first | rest] when rest != [] ->
               # Combine all words after the first into one word
               given_name = Enum.join(rest, "")
               "#{first}, #{given_name}"
+
             _ ->
               n
           end

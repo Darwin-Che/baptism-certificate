@@ -48,10 +48,14 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
       if profile, do: BaptismBackend.S3Storage.presigned_url("raw_images", profile.id), else: nil
 
     compressed_original_image_url =
-      if profile, do: BaptismBackend.S3Storage.presigned_url("compressed_images", profile.id), else: nil
+      if profile,
+        do: BaptismBackend.S3Storage.presigned_url("compressed_images", profile.id),
+        else: nil
 
     headshot_url =
-      if profile, do: BaptismBackend.S3Storage.presigned_url("headshots_rembg", profile.id), else: nil
+      if profile,
+        do: BaptismBackend.S3Storage.presigned_url("headshots_rembg", profile.id),
+        else: nil
 
     paper_url =
       if profile, do: BaptismBackend.S3Storage.presigned_url("papers", profile.id), else: nil
@@ -129,6 +133,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_event("generate_all", _params, socket) do
     profiles = Manager.list_profiles()
+
     profile_ids =
       profiles
       |> Enum.filter(fn p -> p.status == :extracted end)
@@ -148,6 +153,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_event("regenerate_all", _params, socket) do
     profiles = Manager.list_profiles()
+
     profile_ids =
       profiles
       |> Enum.filter(fn p -> p.status in [:extracted, :generated, :reviewed] end)
@@ -229,8 +235,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
       "baptism_day" => Map.get(params, "baptism_day", ""),
       "baptism_month" => Map.get(params, "baptism_month", ""),
       "baptism_year" => Map.get(params, "baptism_year", ""),
-      "sign_date" => Map.get(params, "sign_date", ""),
-      "sign_date_value" => Map.get(params, "sign_date_value", Date.to_string(Date.utc_today()))
+      "sign_date" => Map.get(params, "sign_date", "")
     }
 
     :ok = Manager.set_certificate_config(config)
@@ -253,6 +258,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_event("extract_all", _params, socket) do
     profiles = Manager.list_profiles()
+
     profile_ids =
       profiles
       |> Enum.filter(fn p -> p.status == :uploaded end)
@@ -272,6 +278,7 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
   @impl true
   def handle_event("reextract_all", _params, socket) do
     profiles = Manager.list_profiles()
+
     profile_ids =
       profiles
       |> Enum.filter(fn p -> p.status in [:uploaded, :extracted, :generated, :reviewed] end)
@@ -307,17 +314,23 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
 
   @impl true
   def handle_event("upload_template", _params, socket) do
-    Logger.info("upload_template event triggered, entries: #{inspect(socket.assigns.uploads.template_file.entries)}")
+    Logger.info(
+      "upload_template event triggered, entries: #{inspect(socket.assigns.uploads.template_file.entries)}"
+    )
 
-    uploaded_files = consume_uploaded_entries(socket, :template_file, fn %{path: path}, _entry ->
-      Logger.info("Uploading template file from #{path}")
-      result = case BaptismBackend.S3Storage.upload_template(path) do
-        :ok -> {:ok, :success}
-        {:error, reason} -> {:postpone, reason}
-      end
-      Logger.info("Upload result: #{inspect(result)}")
-      result
-    end)
+    uploaded_files =
+      consume_uploaded_entries(socket, :template_file, fn %{path: path}, _entry ->
+        Logger.info("Uploading template file from #{path}")
+
+        result =
+          case BaptismBackend.S3Storage.upload_template(path) do
+            :ok -> {:ok, :success}
+            {:error, reason} -> {:postpone, reason}
+          end
+
+        Logger.info("Upload result: #{inspect(result)}")
+        result
+      end)
 
     if uploaded_files != [] do
       {:noreply,
@@ -347,7 +360,9 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
       socket.assigns.profiles
       |> Enum.filter(fn p -> p.status == :reviewed end)
 
-    Logger.info("Preparing to download #{length(reviewed_profiles)} reviewed certificates as combined PPTX")
+    Logger.info(
+      "Preparing to download #{length(reviewed_profiles)} reviewed certificates as combined PPTX"
+    )
 
     if Enum.empty?(reviewed_profiles) do
       {:noreply, put_flash(socket, :error, "No reviewed certificates available to download")}
@@ -367,12 +382,15 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
            |> push_event("download_file", %{
              data: Base.encode64(pptx_binary),
              filename: filename,
-             mime_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+             mime_type:
+               "application/vnd.openxmlformats-officedocument.presentationml.presentation"
            })}
 
         {:error, reason} ->
           Logger.error("Failed to create combined PPTX: #{inspect(reason)}")
-          {:noreply, put_flash(socket, :error, "Failed to create combined PPTX: #{inspect(reason)}")}
+
+          {:noreply,
+           put_flash(socket, :error, "Failed to create combined PPTX: #{inspect(reason)}")}
       end
     end
   end
@@ -464,7 +482,11 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
 
   @impl true
   def handle_info({:upload_error, id, reason}, socket) do
-    msg = if id, do: "Upload failed for profile #{id}: #{inspect(reason)}", else: "Upload failed: #{inspect(reason)}"
+    msg =
+      if id,
+        do: "Upload failed for profile #{id}: #{inspect(reason)}",
+        else: "Upload failed: #{inspect(reason)}"
+
     {:noreply, put_flash(socket, :error, msg)}
   end
 

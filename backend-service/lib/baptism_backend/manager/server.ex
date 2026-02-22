@@ -30,7 +30,6 @@ defmodule BaptismBackend.Manager.Server do
     GenServer.call(__MODULE__, {:get_profile, id})
   end
 
-
   def create_profile(file_path) do
     GenServer.call(__MODULE__, {:create_profile, file_path})
     :ok
@@ -212,6 +211,7 @@ defmodule BaptismBackend.Manager.Server do
         BaptismBackend.Certificate.generate_certificate(profile, state.certificate_config, self())
       end
     end)
+
     {:noreply, state}
   end
 
@@ -264,6 +264,7 @@ defmodule BaptismBackend.Manager.Server do
         Extractor.extract(profile.id, state.inference_url, self())
       end
     end)
+
     {:noreply, state}
   end
 
@@ -282,14 +283,17 @@ defmodule BaptismBackend.Manager.Server do
 
   def handle_info({:extraction_result, profile_id, {:ok, resp}}, state) do
     Logger.info("Extraction succeeded for profile #{profile_id}")
-    updated_profiles = Enum.map(state.profiles, fn profile ->
-      if profile.id == profile_id do
-        updated = Profile.apply_extraction_result(profile, resp)
-        %{updated | status: :extracted}
-      else
-        profile
-      end
-    end)
+
+    updated_profiles =
+      Enum.map(state.profiles, fn profile ->
+        if profile.id == profile_id do
+          updated = Profile.apply_extraction_result(profile, resp)
+          %{updated | status: :extracted}
+        else
+          profile
+        end
+      end)
+
     new_state = %{state | profiles: updated_profiles}
     notify_session(new_state, {:profiles_updated, new_state.profiles})
     S3Storage.save_state(new_state)
@@ -304,13 +308,16 @@ defmodule BaptismBackend.Manager.Server do
 
   def handle_info({:certificate_result, profile_id, :ok}, state) do
     Logger.info("Certificate generation succeeded for profile #{profile_id}")
-    updated_profiles = Enum.map(state.profiles, fn profile ->
-      if profile.id == profile_id do
-        %{profile | status: :generated}
-      else
-        profile
-      end
-    end)
+
+    updated_profiles =
+      Enum.map(state.profiles, fn profile ->
+        if profile.id == profile_id do
+          %{profile | status: :generated}
+        else
+          profile
+        end
+      end)
+
     new_state = %{state | profiles: updated_profiles}
     notify_session(new_state, {:profiles_updated, new_state.profiles})
     S3Storage.save_state(new_state)

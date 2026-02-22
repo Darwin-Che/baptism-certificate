@@ -34,6 +34,7 @@ defmodule BaptismBackend.Extractor do
       queue: :queue.new(),
       active: MapSet.new()
     }
+
     {:ok, state}
   end
 
@@ -70,6 +71,7 @@ defmodule BaptismBackend.Extractor do
 
       # Start extraction task
       parent = self()
+
       Task.start(fn ->
         result = do_extract(id, url)
         send(reply_to, {:extraction_result, id, result})

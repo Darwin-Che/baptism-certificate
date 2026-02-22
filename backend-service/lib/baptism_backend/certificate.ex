@@ -44,6 +44,7 @@ defmodule BaptismBackend.Certificate do
       queue: :queue.new(),
       active: MapSet.new()
     }
+
     {:ok, state}
   end
 
@@ -53,6 +54,7 @@ defmodule BaptismBackend.Certificate do
       active: MapSet.size(state.active),
       queued: :queue.len(state.queue)
     }
+
     {:reply, status, state}
   end
 
@@ -89,13 +91,16 @@ defmodule BaptismBackend.Certificate do
 
       # Start generation task
       parent = self()
+
       Task.start(fn ->
         result = do_generate_certificate(profile, config)
         send(reply_to, {:certificate_result, profile.id, result})
         send(parent, {:generation_complete, profile.id})
       end)
 
-      Logger.info("Started certificate generation for #{profile.id} (#{active_count + 1}/#{@max_concurrent} active)")
+      Logger.info(
+        "Started certificate generation for #{profile.id} (#{active_count + 1}/#{@max_concurrent} active)"
+      )
 
       # Update state and recursively process
       new_state = %{state | queue: new_queue, active: MapSet.put(state.active, profile.id)}
@@ -118,7 +123,10 @@ defmodule BaptismBackend.Certificate do
       :ok
     else
       error ->
-        Logger.error("Failed to generate certificate for profile #{profile.id}: #{inspect(error)}")
+        Logger.error(
+          "Failed to generate certificate for profile #{profile.id}: #{inspect(error)}"
+        )
+
         cleanup_files(profile.id)
         error
     end
@@ -130,6 +138,7 @@ defmodule BaptismBackend.Certificate do
 
   defp ensure_directory do
     Logger.info("Ensuring working directory #{@work_dir} exists")
+
     with :ok <- File.mkdir_p(@work_dir),
          :ok <- copy_python_script() do
       :ok
@@ -141,11 +150,12 @@ defmodule BaptismBackend.Certificate do
 
     # In production (Docker), python folder is at /app/python
     # In dev, it's relative to priv_dir
-    source = if File.exists?("/app/python/script.py") do
-      "/app/python/script.py"
-    else
-      Path.join(:code.priv_dir(:baptism_backend), "../python/script.py")
-    end
+    source =
+      if File.exists?("/app/python/script.py") do
+        "/app/python/script.py"
+      else
+        Path.join(:code.priv_dir(:baptism_backend), "../python/script.py")
+      end
 
     dest = Path.join(@work_dir, "script.py")
 
@@ -194,9 +204,14 @@ defmodule BaptismBackend.Certificate do
           File.exists?(expected_png) ->
             Logger.info("PNG created at expected path: #{expected_png}")
             :ok
+
           File.exists?(alternative_png) ->
-            Logger.info("PNG created with page number, renaming from #{alternative_png} to #{expected_png}")
+            Logger.info(
+              "PNG created with page number, renaming from #{alternative_png} to #{expected_png}"
+            )
+
             File.rename(alternative_png, expected_png)
+
           true ->
             Logger.error("PNG file not found at expected locations")
             {:error, {:png_not_found, "Expected #{expected_png} or #{alternative_png}"}}
@@ -217,10 +232,13 @@ defmodule BaptismBackend.Certificate do
     case File.write(input_file, input) do
       :ok ->
         Logger.info("Running python script for profile #{profile.id}")
-        result = System.cmd("python3", [script_path, input_file],
-          cd: @work_dir,
-          stderr_to_stdout: true
-        )
+
+        result =
+          System.cmd("python3", [script_path, input_file],
+            cd: @work_dir,
+            stderr_to_stdout: true
+          )
+
         Logger.info("Python script output for profile #{profile.id}: #{elem(result, 0)}")
 
         # Clean up input file
@@ -239,18 +257,32 @@ defmodule BaptismBackend.Certificate do
   defp build_pptx_input(profile, config) do
     headshot_config = Map.get(config, "headshot", "left=5 top=1 w=3")
     name_config = Map.get(config, "name", "left=1 top=1 w=6 h=1.5 fontsz=18")
-    birthday_config = Map.get(config, "birthday", "left=1 top=2.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
-    bap_day_config = Map.get(config, "baptism_day", "left=1 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
-    bap_month_config = Map.get(config, "baptism_month", "left=2 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
-    bap_year_config = Map.get(config, "baptism_year", "left=3 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
-    sign_date_config = Map.get(config, "sign_date", "left=1 top=5.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
-    sign_date_value = Map.get(config, "sign_date_value", Date.to_string(Date.utc_today()))
 
-    # Parse sign_date_value to Date if it's a string
-    sign_date = case Date.from_iso8601(sign_date_value) do
-      {:ok, date} -> date
-      _ -> Date.utc_today()
-    end
+    birthday_config =
+      Map.get(config, "birthday", "left=1 top=2.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
+
+    bap_day_config =
+      Map.get(config, "baptism_day", "left=1 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
+
+    bap_month_config =
+      Map.get(
+        config,
+        "baptism_month",
+        "left=2 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\""
+      )
+
+    bap_year_config =
+      Map.get(config, "baptism_year", "left=3 top=4 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
+
+    sign_date_config =
+      Map.get(config, "sign_date", "left=1 top=5.5 w=6 h=1.5 fontsz=18 font=\"Times New Roman\"")
+
+    # Sign date is always one day after baptism date
+    sign_date =
+      case profile.baptism_date do
+        nil -> nil
+        date -> Date.add(date, 1)
+      end
 
     """
     template.pptx output_#{profile.id}.pptx

@@ -104,6 +104,7 @@ defmodule BaptismBackend.S3Storage do
   def upload_compressed_image(id, file_path) do
     # Use Mogrify to compress and resize the image
     tmp_path = "/tmp/compressed_#{id}.jpg"
+
     try do
       Mogrify.open(file_path)
       |> Mogrify.format("jpg")
@@ -112,6 +113,7 @@ defmodule BaptismBackend.S3Storage do
       |> Mogrify.save(path: tmp_path)
 
       key = "compressed_images/#{id}.jpg"
+
       case tmp_path
            |> ExAws.S3.Upload.stream_file()
            |> ExAws.S3.upload(bucket_name(), key,
@@ -121,6 +123,7 @@ defmodule BaptismBackend.S3Storage do
            |> ExAws.request() do
         {:ok, _response} ->
           :ok
+
         {:error, reason} ->
           {:error, reason}
       end
@@ -178,7 +181,9 @@ defmodule BaptismBackend.S3Storage do
         :get,
         bucket_name(),
         key,
-        query_params: [{"response-content-disposition", "attachment; filename=\"#{download_filename}\""}],
+        query_params: [
+          {"response-content-disposition", "attachment; filename=\"#{download_filename}\""}
+        ],
         expires_in: expires_in
       )
 
@@ -197,6 +202,7 @@ defmodule BaptismBackend.S3Storage do
   @spec upload_template(String.t()) :: :ok | {:error, any()}
   def upload_template(file_path) do
     key = "template.pptx"
+
     case file_path
          |> ExAws.S3.Upload.stream_file()
          |> ExAws.S3.upload(bucket_name(), key,
@@ -206,6 +212,7 @@ defmodule BaptismBackend.S3Storage do
          |> ExAws.request() do
       {:ok, _response} ->
         :ok
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -217,6 +224,7 @@ defmodule BaptismBackend.S3Storage do
   @spec template_exists?() :: boolean()
   def template_exists? do
     key = "template.pptx"
+
     case bucket_name()
          |> ExAws.S3.head_object(key)
          |> ExAws.request() do
@@ -231,6 +239,7 @@ defmodule BaptismBackend.S3Storage do
   @spec template_presigned_url(integer()) :: String.t()
   def template_presigned_url(expires_in \\ 600) do
     key = "template.pptx"
+
     {:ok, url} =
       ExAws.S3.presigned_url(
         ExAws.Config.new(:s3),
@@ -239,6 +248,7 @@ defmodule BaptismBackend.S3Storage do
         key,
         expires_in: expires_in
       )
+
     url
   end
 
@@ -324,7 +334,8 @@ defmodule BaptismBackend.S3Storage do
 
         {:error, reason} ->
           Logger.warning("Failed to delete S3 file #{key}: #{inspect(reason)}")
-          :ok  # Continue even if delete fails (file might not exist)
+          # Continue even if delete fails (file might not exist)
+          :ok
       end
     end)
 
