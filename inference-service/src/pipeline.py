@@ -8,7 +8,7 @@ import torch
 from src.storage import download_image, upload_headshot, upload_paper, upload_headshot_rembg
 from src.face import extract_headshot
 from src.paper import extract_paper
-from src.ocr import extract_ocr, parse_ocr
+from src.ocr import parse_ocr
 from src.timer import Timer
 from src.facerembg import remove_background
 
@@ -51,9 +51,7 @@ def pipeline(filename: str):
             timer.mark("upload_paper")
 
         # OCR
-        extract_ocr_result = extract_ocr(local_paper)
-        timer.mark("extract_ocr_inference")
-        parse_ocr_result = parse_ocr(extract_ocr_result.lower())
+        parse_ocr_result = parse_ocr(local_paper)
         timer.mark("parse_ocr_inference")
 
         return {
@@ -62,7 +60,6 @@ def pipeline(filename: str):
             "filename": filename,
             "headshot_result": headshot_result,
             "paper_result": paper_result,
-            "extract_ocr_result": extract_ocr_result,
             "parse_ocr_result": parse_ocr_result,
             "timing": timer.steps
         }

@@ -1,8 +1,9 @@
-from rembg import remove
+from rembg import remove, new_session
 from PIL import Image
 
-print("Loading background removal model...")
 # The model will be downloaded on first use
+print("Loading background removal model...")
+session = new_session("birefnet-portrait")
 print("Background removal model ready")
 
 def remove_background(input_path: str, output_path: str):
@@ -22,7 +23,7 @@ def remove_background(input_path: str, output_path: str):
             input_data = input_file.read()
         
         # Remove background
-        output_data = remove(input_data)
+        output_data = remove(input_data, session=session)
         
         # Save the output image
         with open(output_path, 'wb') as output_file:

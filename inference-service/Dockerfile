@@ -13,12 +13,16 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy Python requirements and install
-COPY requirements.txt requirements_ml.txt .
-
 RUN pip install --upgrade pip
 
+COPY requirements_ml.txt .
+
 RUN pip install --no-cache-dir -r requirements_ml.txt
+
+COPY requirements_hf.txt requirements_img.txt .
+
+RUN pip install --no-cache-dir -r requirements_hf.txt
+RUN pip install --no-cache-dir -r requirements_img.txt
 
 # Pre-download models to /models volume
 
@@ -35,7 +39,10 @@ print("InsightFace model cached in volume path")
 EOF
 
 # Install light Python dependencies
+COPY requirements.txt requirements_util.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements_util.txt
 
 # Copy source code
 COPY src ./src

@@ -3,5 +3,3 @@ uvicorn
 jupyter
 boto3
 python-multipart
-rembg
-pillow

@@ -1,41 +1,22 @@
 import json
 import re
 
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+from qwen_vl_utils import process_vision_info
 
-from paddleocr import PaddleOCRVL
-
-######## OCR model
-
-paddle_ocr_vl = PaddleOCRVL()
-
-def extract_ocr(file):
-    output = paddle_ocr_vl.predict(file)
-    result = ""
-    for res in output:
-        for block in res['parsing_res_list']:
-            result += block.content
-            result += "\n"
-    return result
-
-####### LLM model
-
-model_name = "Qwen/Qwen2.5-1.5B-Instruct"
-# model_name = "/models/qwen2.5b"
-
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16,
-    device_map="auto"
+# default: Load the model on the available device(s)
+model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map="auto"
 )
 
-def parse_ocr(text):
-    prompt = f"""
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+
+### Customization Prompt
+
+prompt = """
 You are a data extraction system.
 
-Extract these fields from the OCR text:
+Extract these fields from the image:
 - name_cn
 - name_pinyin : 名字拼音，请合理参考中文名字。如果中文名字是孙建芬 格式应为 "Sun, JianFen"。姓在前，名在后，如果名字是多字，每个字拼音的第一个字母大写。
 - birthday (YYYY-MM-DD)
@@ -44,27 +25,53 @@ Extract these fields from the OCR text:
 - address : 请变为正确的地址格式
 - birth : "来自省份"
 
-OCR text:
-{text}
-
-Return JSON only. Put null at appropriate places.
+Return json only. Put null at appropriate places.
 """
 
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+def parse_ocr(image_path: str) -> dict:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "image": image_path,
+                },
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
 
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=256,
-            temperature=0.1,
-            do_sample=False
-        )
+    text = processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    image_inputs, video_inputs = process_vision_info(messages)
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt",
+    )
+    inputs = inputs.to("cuda")
 
-    result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Extract JSON safely
-    match = re.search(r"\{.*\}", result, re.S)
+    # Inference: Generation of the output
+    generated_ids = model.generate(**inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = processor.batch_decode(
+        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )
+    
+    match = re.search(r"\{.*\}", output_text[0], re.S)
     if match:
-        return json.loads(match.group())
+        json_str = match.group(0)
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            return {}
     else:
-        return result
+        print("No JSON found in the output.")
+        return {}
