@@ -407,17 +407,16 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
     else
       # Create zip file in memory
       case create_certificates_zip(reviewed_profiles) do
-        {:ok, zip_binary} ->
+        {:ok, presigned_url} ->
           # Send the zip file as a download
           timestamp = DateTime.utc_now() |> DateTime.to_unix()
           filename = "baptism_certificates_#{timestamp}.zip"
 
           {:noreply,
            socket
-           |> push_event("download_file", %{
-             data: Base.encode64(zip_binary),
-             filename: filename,
-             mime_type: "application/zip"
+           |> push_event("download_from_url", %{
+             url: presigned_url,
+             filename: filename
            })}
 
         {:error, reason} ->
@@ -439,17 +438,16 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
     else
       # Create zip file in memory
       case create_certificates_zip(reviewed_profiles) do
-        {:ok, zip_binary} ->
+        {:ok, presigned_url} ->
           # Send the zip file as a download
           timestamp = DateTime.utc_now() |> DateTime.to_unix()
           filename = "baptism_certificates_#{timestamp}.zip"
 
           {:noreply,
            socket
-           |> push_event("download_file", %{
-             data: Base.encode64(zip_binary),
-             filename: filename,
-             mime_type: "application/zip"
+           |> push_event("download_from_url", %{
+             url: presigned_url,
+             filename: filename
            })}
 
         {:error, reason} ->
@@ -523,32 +521,47 @@ defmodule BaptismBackendWeb.ProfileLive.Index do
 
   # Helper function to create a zip file of all reviewed certificates
   defp create_certificates_zip(reviewed_profiles) do
-    files =
-      reviewed_profiles
-      |> Enum.map(fn profile ->
-        case BaptismBackend.S3Storage.download_certificate(profile.id) do
-          {:ok, content} ->
-            # Create filename from profile info
-            name = String.replace(profile.name_pinyin || profile.id, " ", "")
-            filename = "#{name}_#{profile.birthday}.pptx"
-            {String.to_charlist(filename), content}
+    tmp_dir = "/tmp/zip_certs_#{length(reviewed_profiles)}_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(tmp_dir)
 
-          {:error, _reason} ->
-            nil
+    try do
+      files =
+        reviewed_profiles
+        |> Enum.map(fn profile ->
+          case BaptismBackend.S3Storage.download_certificate(profile.id) do
+            {:ok, content} ->
+              # Create filename from profile info
+              name = String.replace(profile.name_cn || profile.name_pinyin || profile.id, " ", "")
+              filename = "#{name}_#{profile.birthday}.pptx"
+              input_path = Path.join(tmp_dir, filename)
+
+              File.write!(input_path, content)
+
+              String.to_charlist(filename)
+
+            {:error, _reason} ->
+              nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      if Enum.empty?(files) do
+        {:error, "No certificates could be downloaded"}
+      else
+        output_path = Path.join(tmp_dir, "certificates.zip")
+
+        case :zip.create(output_path, files, cwd: String.to_charlist(tmp_dir)) do
+          {:ok, ^output_path} ->
+            BaptismBackend.S3Storage.upload_zipped_certificates(output_path)
+            {:ok, BaptismBackend.S3Storage.zipped_certificates_presigned_url()}
+
+          {:error, reason} ->
+            {:error, reason}
         end
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    if Enum.empty?(files) do
-      {:error, "No certificates could be downloaded"}
-    else
-      case :zip.create("memory.zip", files, [:memory]) do
-        {:ok, {"memory.zip", zip_binary}} ->
-          {:ok, zip_binary}
-
-        {:error, reason} ->
-          {:error, reason}
       end
+    after
+      # Clean up temp files
+      File.rm_rf(tmp_dir)
     end
   end
 end

@@ -306,6 +306,45 @@ defmodule BaptismBackend.S3Storage do
     end
   end
 
+  @zipped_certs_key "temp_zipped_certs.zip"
+
+  @doc """
+  Upload the temporary zipped certificates
+  """
+  @spec upload_zipped_certificates(String.t()) :: :ok | {:error, any()}
+  def upload_zipped_certificates(local_path) do
+    case local_path
+         |> ExAws.S3.Upload.stream_file()
+         |> ExAws.S3.upload(bucket_name(), @zipped_certs_key,
+           content_type: "application/zip",
+           acl: :private
+         )
+         |> ExAws.request() do
+      {:ok, _response} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Get a presigned URL for downloading the temporary zipped certificates.
+  """
+  @spec zipped_certificates_presigned_url(integer()) :: String.t()
+  def zipped_certificates_presigned_url(expires_in \\ 600) do
+    {:ok, url} =
+      ExAws.S3.presigned_url(
+        ExAws.Config.new(:s3),
+        :get,
+        bucket_name(),
+        @zipped_certs_key,
+        expires_in: expires_in
+      )
+
+    url
+  end
+
   @doc """
   Delete all S3 files associated with a profile ID.
   Removes files from: raw_images, compressed_images, headshots, papers, certificates, certificate_previews
